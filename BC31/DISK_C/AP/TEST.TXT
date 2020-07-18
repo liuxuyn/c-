@@ -1,0 +1,9 @@
+yu 2600 0
+gh 2800 0
+g 4100 4
+gh 2500 0
+NoData 0 4
+NoData 0 5
+NoData 0 6
+NoData 0 7
+NoData 0 8

@@ -1,0 +1,1104 @@
+#include <graphics.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "all.h"
+#include "mouse.h"
+#include "menu.h"
+#include "drawtool.h"
+#include "readbmp.h"
+#include "init_s.h"
+#include "init_d.h"
+#include "fz_s.h"
+#include "fz_d.h"
+
+extern struct MOUSE 
+{
+  int mx;
+  int my;
+  int mstate;
+}MS;
+
+/*各按钮的定义*/
+static BT bt_czsm={STARTX+10,STARTY+30+8,STARTX+10+71,STARTY+30+8+11,"操作说明F1","关于本系统操作的介绍"};
+static BT bt_gnjs={STARTX+81+20,STARTY+38,STARTX+81+20+71,STARTY+49,"功能介绍F2","关于本系统功能的简介"};
+static BT bt_gytd={STARTX+172+20,STARTY+38,STARTX+172+20+71,STARTY+49,"关于团队F3","制作人员的简介"};
+static BT bt_exit={ENDX-33-36,STARTY+38,ENDX-10,STARTY+49,"退出ESC","按下将退出系统"};
+
+static BT bt_xinfz={ENDX/2-16*2,STARTY+150,ENDX/2+16*2,STARTY+150+15,"行人仿真","直路处对行人的仿真"};
+static BT bt_shifz={ENDX/2-16*2,STARTY+200,ENDX/2+16*2,STARTY+200+15,"十字仿真","十字路口处对车辆的仿真"};
+static BT bt_dinfz={ENDX/2-16*2,STARTY+250,ENDX/2+16*2,STARTY+250+15,"丁字仿真","丁字路口处对车辆的仿真"};
+static BT bt_xtsj={STARTX+30,STARTY+200-18,STARTX+30+63,STARTY+215-18,"系统随机","用户可使用系统提供的数据"};
+static BT bt_yhdy={STARTX+30,STARTY+232,STARTX+93,STARTY+247,"用户定义","用户可以自己定义车的数量"};
+static BT bt_xtmr={STARTX+30,STARTY+232+50,STARTX+93,STARTY+282+15,"系统默认","用户可以使用系统默认数据"};
+
+static BT bt_intfz={ENDX/2-16*2,STARTY+200,ENDX/2+16*2,STARTY+200+15,"智能仿真","通过扫描路况进行交通灯智能控制"};
+static BT bt_usufz={ENDX/2-16*2,STARTY+250,ENDX/2+16*2,STARTY+250+15,"常规仿真","现实中常见的交通管理仿真"};
+
+static BT bt_back={STARTX+20,ENDY-80,STARTX+20+31,ENDY-65,"返回","按下将返回到车辆与行人选择界面"};
+static BT bt_go={ENDX-20-31,ENDY-80,ENDX-20,ENDY-65,"确定","按下将进入仿真界面"};
+static char *czsm[]={"F1 操作说明","F2 功能介绍","F3 关于团队","ENTER 确认分析","BACK 后退删除 ","ESC 退出"};
+static char *gnjs[]={"1、智能十字仿真 ","2、常规十字仿真 ","3、智能丁字仿真 ","4、常规丁字仿真","4、时间对比 ","5、报表分析 "};
+static char *gytd[]={" 自动化1003班","  “成 员”","   李 鑫","   国悦婷"," ！注意要开始啦！"};
+
+/*收起菜单的函数*/
+void pullmenuup(BT *bt,char *buffer)
+{
+  hide_mouse();
+  putimage(bt->btx1-BTDX,bt->bty2+4,buffer,COPY_PUT);
+  free(buffer);
+
+  draw_btlight(bt,0);
+  show_mouse();
+}
+
+/*菜单处理函数*/
+void handlemenu(BT *bt,int n,char *buffer)
+{
+  while(1)
+  { 
+    MS.mstate=read_mouse();
+    if(MS.mstate==1)
+    {
+      if(!mouse_onwin(bt->btx1-BTDX,bt->bty2+4,bt->btx1-BTDX+16*10,bt->bty2+n*20+20)
+         &&!mouse_onbt(bt))
+      {
+        pullmenuup(bt,buffer);
+        break;
+      }
+    }
+    if(MS.mstate==2)
+    {
+      pullmenuup(bt,buffer);
+      break;
+	}
+    if(MS.mstate!=0&&MS.mstate!=1&&MS.mstate!=2&&MS.mstate!=3)
+    {
+      pullmenuup(bt,buffer);
+      break;
+    }
+  }
+}
+
+/*拉下菜单*/
+void pullmenudown(BT *bt,int n,char *word[])
+{
+  int i=n*20,size=0;
+  char *buffer=NULL;
+  hide_mouse();
+  draw_btlight(bt,2);
+  show_mouse();
+  size=imagesize(bt->btx1-BTDX,bt->bty2+4,bt->btx1-BTDX+16*10,bt->bty2+i+20);
+  buffer=malloc(size);
+  if(buffer==NULL)
+  {
+    printf("not enough memory!");
+    exit(1);
+  }
+
+  hide_mouse();
+  getimage(bt->btx1-BTDX,bt->bty2+4,bt->btx1-BTDX+16*10,bt->bty2+i+20,buffer);
+  hide_mouse();
+  win(bt->btx1-BTDX,bt->bty2+4,bt->btx1-BTDX+16*10,bt->bty2+i+20,LIGHTGRAY);
+  for(i=0;i<n;i++)
+  {
+	word_write(bt->btx1,bt->bty2+10+6+i*20,word[i],BLACK,16);
+  }
+  show_mouse();
+  handlemenu(bt,n,buffer);
+
+}
+
+
+/*处理鼠标没有按下的情况*/
+void do_mouse_move(void)
+{
+  if(mouse_onbt(&bt_czsm))
+      hlight_bt(&bt_czsm);  	
+  if(mouse_onbt(&bt_gnjs))
+      hlight_bt(&bt_gnjs);  	
+  if(mouse_onbt(&bt_gytd))
+      hlight_bt(&bt_gytd); 	
+  if(mouse_onbt(&bt_exit))  
+      hlight_bt(&bt_exit);
+}
+
+/*处理鼠标按下的情况*/
+void do_left_click(void)
+{
+  if(mouse_onbt(&bt_exit))
+    {
+      readbmp("wenjian\\byebye.bmp");
+      exit(0);
+    }  
+  if(mouse_onbt(&bt_czsm))
+	    pullmenudown(&bt_czsm,CZSM_NUM,czsm);
+  
+  if(mouse_onbt(&bt_gnjs))
+      pullmenudown(&bt_gnjs,GNJS_NUM,gnjs);
+
+  if(mouse_onbt(&bt_gytd))
+	    pullmenudown(&bt_gytd,GNJS_NUM,gytd);
+}
+
+ 
+
+/*观看与体验仿真选择界面*/
+void Win_ShiOrDing(void)
+{
+  int time=1,state=0;
+  while(1)
+  {
+  	if(time==1)
+  	{
+  		init_VGA();
+  		cleardevice();
+      draw_winbk();
+      show_winname("仿真模块选择",6);
+      //draw_bt(&bt_xinfz,BLACK,16);
+      draw_bt(&bt_shifz,BLACK,16);
+      draw_bt(&bt_dinfz,BLACK,16);
+      init_mouse();
+      time=0;
+  	}
+	MS.mstate=read_mouse();
+	switch(MS.mstate)
+	{
+	  case 0:
+		   do_mouse_move();
+		   //if(mouse_onbt(&bt_xinfz))
+		   //	 hlight_bt(&bt_xinfz);
+		   if(mouse_onbt(&bt_shifz))
+			   hlight_bt(&bt_shifz);
+		   if(mouse_onbt(&bt_dinfz))
+			   hlight_bt(&bt_dinfz);
+		   break;
+
+	  case 1:
+		   do_left_click();
+		  /*( if(mouse_onbt(&bt_xinfz))
+		   {
+		   	closegraph();
+		   	state=Win_IntOrNor_x();
+		   	if(state==EXIT)
+		   	{
+		   		state=0;
+		   		time=1;
+		   		break;
+		   	}	
+		   }*/
+		   if(mouse_onbt(&bt_shifz))
+		   {
+		   	closegraph();
+			   state=Win_CarInit_s();
+			   if(state==EXIT)
+			   {
+			   	 state=0;
+			   	 time=1;
+			   	 break;
+			   }
+		   }
+		   if(mouse_onbt(&bt_dinfz))
+		   {
+		   	 closegraph();
+			   state=Win_CarInit_d();
+			   if(state==EXIT)
+			   {
+			   	 state=0;
+			   	 time=1;
+			   	 break;
+			   }
+		   }
+		   break;
+
+	  case 2:
+		   break;
+
+	  case F1:
+		  pullmenudown(&bt_czsm,CZSM_NUM,czsm);
+		  break;
+
+	  case F2:
+		  pullmenudown(&bt_gnjs,GNJS_NUM,gnjs);
+		  break;
+
+	  case F3:
+		  pullmenudown(&bt_gytd,GYTD_NUM,gytd);
+		  break;
+
+	  case ESC:
+		   readbmp("wenjian\\byebye.bmp");
+		   exit(0);
+		   break;
+
+	 }
+   }
+}
+
+
+/*车辆初始化界面鼠标没按下的操作*/
+void do_carinit_mouse_move(void)
+{
+	if(mouse_onbt(&bt_xtsj))
+		 hlight_bt(&bt_xtsj);
+	if(mouse_onbt(&bt_yhdy))
+		 hlight_bt(&bt_yhdy);
+	if(mouse_onbt(&bt_xtmr))
+		 hlight_bt(&bt_xtmr);
+	if(mouse_onbt(&bt_back))
+		 hlight_bt(&bt_back);
+	if(mouse_onbt(&bt_go))
+		 hlight_bt(&bt_go);
+}
+
+/*系统随机生成数据（共用）*/
+void sys_random(BOX *box,int bn)
+{
+	int i=0,n[4];
+	char ch[3]={'\0','\0','\0'};
+	hide_mouse();
+	draw_btlight(&bt_xtsj,2);
+	show_mouse();
+
+	for(i=0;i<bn;i++)
+	{
+		box[i].bn[0]=-1;
+		box[i].bn[1]=-1;
+	}
+	for(i=0;i<bn;i++)
+	{
+		n[i]=random(1001);
+		n[i]=n[i]%(CAR_MAX+1);
+		box[i].bstate=1;
+	}
+
+	for(i=0;i<bn;i++)
+	{
+		if(n[i]<10)
+		{
+			box[i].bn[0]=n[i];
+			ch[0]=n[i]+'0';
+			ch[1]='\0';
+			hide_mouse();
+			draw_box(&box[i],LIGHTGRAY);
+			settextstyle(0,0,2);
+			setcolor(BLACK);
+			outtextxy(box[i].bx0+8,box[i].by0+2,ch);
+			show_mouse();
+		}
+		else
+		{
+			box[i].bn[0]=n[i]/10;
+			box[i].bn[1]=n[i]%10;
+			ch[0]=n[i]/10+'0';
+			ch[1]=n[i]%10+'0';
+			ch[2]='\0';
+			hide_mouse();
+			draw_box(&box[i],LIGHTGRAY);
+			settextstyle(0,0,2);
+			setcolor(BLACK);
+			outtextxy(box[i].bx0+8,box[i].by0+2,ch);
+			show_mouse();
+		}
+	}
+}
+
+/*系统默认数据(共用)*/
+void sys_moren(BOX *box,int n)
+{
+	int i=0;
+	char ch[3]={'\0','\0','\0'};
+
+	hide_mouse();
+	draw_btlight(&bt_xtmr,2);
+	show_mouse();
+
+	for(i=0;i<n;i++)
+	{
+		box[i].bn[0]=-1;
+		box[i].bn[1]=-1;
+		box[i].bstate=1;
+	}
+
+	for(i=0;i<n;i++)
+	{
+		box[i].bn[0]=CAR_MOREN;
+		ch[0]=CAR_MOREN/10+'0';
+        ch[1]=CAR_MOREN%10+'0';
+        ch[2]='\0';
+        hide_mouse();
+        draw_box(&box[i],LIGHTGRAY);
+        settextstyle(0,0,2);
+			  setcolor(BLACK);
+				outtextxy(box[i].bx0+8,box[i].by0+2,ch);
+				show_mouse();
+    }
+}
+
+/*车辆初始化时数据输入及存储显示（共用）*/
+void input(BOX *box)
+{
+	int num=0;
+	int i=0;
+	char ch[3]={'\0','\0','\0'};
+  int num_key[10]={ZERO,ONE,TWO,THREE,FOUR,FIVE,SIX,SEVEN,EIGHT,NINE};
+  hide_mouse();
+	draw_box(box,WHITE);
+	box->bn[0]=-1;
+	box->bn[1]=-1;
+	box->bstate=0;
+	show_mouse();
+
+	while(1)
+	{
+		MS.mstate=read_mouse();
+
+		if((MS.mstate==1&&!mouse_onbox(box))||MS.mstate==ENTER)
+		{
+			hide_mouse();                                    
+			draw_box(box,LIGHTGRAY);
+			outtextxy(box->bx0+8,box->by0+1,ch);
+			show_mouse();
+			//box_active=-1;
+			if(box->bn[0]!=-1)
+			    box->bstate=1;
+			else
+			    box->bstate=0;
+			break;
+		}
+		for(i=0;i<10;i++)
+		{
+			if(MS.mstate==num_key[i]&&num<2)
+			{
+				if(num==0)
+				{
+					box->bn[0]=i;
+					ch[0]=i+'0';
+					ch[1]='\0';
+					ch[2]='\0';
+					settextstyle(0,0,2);
+					setcolor(BLACK);
+					hide_mouse();
+					outtextxy(box->bx0+8,box->by0+1,ch);
+					show_mouse();
+					num++;
+				}
+				else if(num==1)
+				{
+					box->bn[1]=i;
+					ch[1]=i+'0';
+					ch[2]='\0';
+					settextstyle(0,0,2);
+					setcolor(BLACK);
+					hide_mouse();
+					outtextxy(box->bx0+8,box->by0+1,ch);
+					show_mouse();
+					num++;
+				}
+			}
+		}
+		if(MS.mstate==BACK)
+		{
+			if(num==0)
+			{
+			  hide_mouse();
+				draw_box(box,WHITE);
+				show_mouse();
+			}
+			if(num==1)
+			{
+				box->bn[0]=-1;
+				box->bn[1]=-1;
+				ch[0]='\0';ch[1]='\0';ch[2]='\0';
+				hide_mouse();                                                    //////
+				draw_box(box,WHITE);
+				settextstyle(0,0,2);
+				setcolor(BLACK);
+				outtextxy(box->bx0+8,box->by0+1,ch);
+				show_mouse();
+				num=0;
+			}
+			if(num==2)
+			{
+				box->bn[1]=-1;
+				ch[1]='\0';
+				ch[2]='\0';
+				hide_mouse();                                   //////////
+				draw_box(box,WHITE);
+				settextstyle(0,0,2);
+				setcolor(BLACK);
+				outtextxy(box->bx0+8,box->by0+1,ch);
+				show_mouse();
+				num=1;
+			}
+		}
+	}
+}
+
+
+
+
+/*车辆初始化，在预览窗口操作（共用）*/
+void do_initcar(BOX *box,int n)
+{
+	int i=0;
+	hide_mouse();
+	draw_btlight(&bt_yhdy,2);
+	msg("请在路面预览窗口内输入路口车辆，每个路口车辆上限为12辆");
+	show_mouse();
+	while(1)
+	{
+		
+		MS.mstate=read_mouse();
+		for(i=0;i<n;i++)
+		{
+		  if(box[i].bstate==0)
+		  {
+			  if(MS.mstate==0&&mouse_onbox(&box[i]))
+		      {
+		          hide_mouse();
+		          draw_box(&box[i],WHITE);
+		          show_mouse();
+		      } 
+			  if(MS.mstate==0&&!mouse_onbox(&box[i]))
+		      {
+		          hide_mouse();
+				  draw_box(&box[i],LIGHTGRAY);
+		          show_mouse();
+		      }
+		  } 	  
+			if(MS.mstate==1&&mouse_onbox(&box[i]))
+			{
+			    //box_active=i;
+			    input(&box[i]);
+			}	  
+		  
+    }
+		  if(MS.mstate==1&&!mouse_onbt(&bt_yhdy)&&!mouse_onwin(RIN_X0,RIN_Y0,RIN_X0+RIN_LEN,RIN_Y0+RIN_WID))
+		  {
+			    hide_mouse();              
+		      draw_btlight(&bt_yhdy,0);
+		      msgoff();
+		      show_mouse();
+			    break;
+		  }
+	  
+	}
+}
+
+
+
+
+/*当鼠标在确定上时保持显示提示的函数（共用）*/
+void go_msg_stay(void)
+{
+    while(1)
+    {
+        read_mouse();
+        if(!mouse_onbt(&bt_go))
+        {
+            hide_mouse();
+			      draw_btlight(&bt_go,0);
+            show_mouse();
+            break;
+        }
+    }
+}
+
+
+
+
+/*点击确定后的判断数据和进入下一界面的函数（十字）*/
+int init_cargo_s(int car_num[],BOX *box)
+{
+    int i=0,j=0,k=0,cn=0;
+    int state=0;
+    struct CAR car[CAR_MAX * 4];
+    int n=0;
+    hide_mouse();
+    draw_btlight(&bt_go,2);
+    show_mouse();
+    for(i=0;i<4;i++)
+    {
+        if(box[i].bn[0]==-1)
+        {
+            switch(i)
+            {
+                case 0:
+					             msgoff();
+                       msg("请输入东一路车辆");
+                       go_msg_stay();
+                       break;
+                case 1:
+                       msgoff();
+                       msg("请输入南二路车辆");
+                       go_msg_stay();
+                       break;
+                case 2:
+                       msgoff();
+                       msg("请输入西三路车辆");
+					             go_msg_stay();
+                       break;
+                case 3:
+                       msgoff();
+                       msg("请输入北四路车辆");
+                       go_msg_stay();
+                       break;                  
+            }
+            break;
+        }
+    }
+	if(i>=4)
+    {
+        for(j=0;j<4;j++)
+        {
+            if(box[j].bn[1]!=-1)
+            {
+                cn=box[j].bn[0]*10+box[j].bn[1];
+                if(cn > CAR_MAX)
+                {
+                    switch(j)
+                    {
+                        case 0:
+							                 msgoff();
+                               msg("东一路车辆超出上限，请重新设置！");
+                               go_msg_stay();
+                               break;
+                        case 1:
+                               msgoff();
+                               msg("南二路车辆超出上限，请重新设置！");
+                               go_msg_stay();
+                               break;
+                        case 2:
+                               msgoff();
+                               msg("西三路车辆超出上限，请重新设置！");
+							                 go_msg_stay();
+                               break;
+                        case 3:
+                               msgoff();
+                               msg("北四路车辆超出上限，请重新设置！");
+                               go_msg_stay();
+                               break;                              
+                    }
+                    break;
+                }
+            }
+		}
+    }
+    if(j>=4)
+    {
+        for(k=0;k<4;k++)
+        {
+            if(box[k].bn[1]==-1)
+            {
+                car_num[k]=box[k].bn[0];
+                box[k].bn[0]=-1;
+            }
+            else
+			      {
+                car_num[k]=box[k].bn[0]*10+box[k].bn[1];
+                box[k].bn[0]=-1;
+                box[k].bn[1]=-1;
+            }
+        }
+        //box_active=-1;
+
+        n=car_num[0]+car_num[1]+car_num[2]+car_num[3];
+        init_car_s(car_num,n,car);
+        closegraph();
+        state=Win_IntOrNor_s(car_num,car);
+        if(state==EXIT)
+        {
+        	state=0;
+        	car_zero_s(car);
+        	return EXIT;
+        }
+        
+    }
+    return 1;
+}
+
+/*丁字口点击确定后的判断数据和进入下一界面的函数(丁字)*/
+int init_cargo_d(int car_num[],BOX *box)
+{
+    int i=0,j=0,k=0,cn=0;
+    int state=0;
+    struct CAR car[CAR_MAX * 3];
+    int n=0;
+    hide_mouse();
+    draw_btlight(&bt_go,2);
+    show_mouse();
+    for(i=0;i<3;i++)
+    {
+        if(box[i].bn[0]==-1)
+        {
+            switch(i)
+            {
+                case 0:
+					             msgoff();
+                       msg("请输入东一路车辆");
+                       go_msg_stay();
+                       break;
+                case 1:
+                       msgoff();
+                       msg("请输入南二路车辆");
+                       go_msg_stay();
+                       break;
+                case 2:
+                       msgoff();
+                       msg("请输入西三路车辆");
+					             go_msg_stay();
+                       break;               
+            }
+            break;
+        }
+    }
+	if(i>=3)
+    {
+        for(j=0;j<3;j++)
+        {
+            if(box[j].bn[1]!=-1)
+            {
+                cn=box[j].bn[0]*10+box[j].bn[1];
+                if(cn > CAR_MAX)
+                {
+                    switch(j)
+                    {
+                        case 0:
+							                 msgoff();
+                               msg("东一路车辆超出上限，请重新设置！");
+                               go_msg_stay();
+                               break;
+                        case 1:
+                               msgoff();
+                               msg("南二路车辆超出上限，请重新设置！");
+                               go_msg_stay();
+                               break;
+                        case 2:
+                               msgoff();
+                               msg("西三路车辆超出上限，请重新设置！");
+							                 go_msg_stay();
+                               break;                             
+                    }
+                    break;
+                }
+            }
+		}
+    }
+    if(j>=3)
+    {
+        for(k=0;k<3;k++)
+        {
+            if(box[k].bn[1]==-1)
+            {
+                car_num[k]=box[k].bn[0];
+                box[k].bn[0]=-1;
+            }
+            else
+			      {
+                car_num[k]=box[k].bn[0]*10+box[k].bn[1];
+                box[k].bn[0]=-1;
+                box[k].bn[1]=-1;
+            }
+        }
+        //box_active=-1;
+
+        n=car_num[0]+car_num[1]+car_num[2];
+        init_car_d(car_num,n,car);
+        closegraph();
+        state=Win_IntOrNor_d(car_num,car);
+        if(state==EXIT)
+        {
+        	state=0;
+        	car_zero_d(car);
+        	return EXIT;
+        }       
+    }
+    return 1;
+}
+
+
+/*十字车辆初始化的界面*/
+int Win_CarInit_s()
+{
+  int  car_num[4]={0,0,0,0};
+  int state=0,time=1;
+  int i=0;
+  BOX box[4]={
+				   {RIN_X0+RIN_LEN-75-16*3+1,RIN_Y0+RIN_WID/2-9,16*3,18,-1,-1,0},//东
+				   {RIN_X0+RIN_LEN/2-16-8,RIN_Y0+RIN_WID-40-15,16*3,18,-1,-1,0},  //南
+				   {RIN_X0+75,RIN_Y0+RIN_WID/2-9,16*3,18,-1,-1,0},                //西
+				   {RIN_X0+RIN_LEN/2-16-8,RIN_Y0+40,16*3,18,-1,-1,0}              //北
+				     };
+
+  while(1)
+  {
+  	if(time==1)
+  	{
+  		  init_VGA();
+  		  cleardevice();
+        draw_winbk();
+        show_winname("车辆初始化",5);
+        draw_bt(&bt_xtsj,BLACK,16);
+        draw_bt(&bt_yhdy,BLACK,16);
+        draw_bt(&bt_xtmr,BLACK,16);
+        draw_bt(&bt_back,YELLOW,16);
+        draw_bt(&bt_go,YELLOW,16);        
+        draw_roadin_s(RIN_X0,RIN_Y0,RIN_LEN,RIN_WID,RIN_RWID);
+	      for(i=0;i<4;i++)
+	      {
+			     draw_box(&box[i],LIGHTGRAY);
+	      }
+        init_mouse();
+        time=0;
+  	}
+	MS.mstate=read_mouse();
+	switch(MS.mstate)
+	{
+	  case 0:
+		   do_mouse_move();
+		   do_carinit_mouse_move();
+		   break;
+
+	  case 1:
+		   do_left_click();
+		   if(mouse_onbt(&bt_xtsj))
+			   sys_random(box,4);
+		   if(mouse_onbt(&bt_yhdy))
+			   do_initcar(box,4);
+		   if(mouse_onbt(&bt_xtmr))
+			   sys_moren(box,4);
+		   if(mouse_onbt(&bt_back))
+			 	  return EXIT;
+		   if(mouse_onbt(&bt_go))
+			 {
+			 	 state=init_cargo_s(car_num,box);
+			 	 if(state==EXIT)
+			 	 {
+			 	 	 state=0;
+			 	 	 time=1;
+			 	 	 break;
+			 	 }
+			 }
+		   break;
+
+	  case 2:
+		       break;
+
+	  case F1:
+		  pullmenudown(&bt_czsm,CZSM_NUM,czsm);
+		  break;
+
+	  case F2:
+		  pullmenudown(&bt_gnjs,GNJS_NUM,gnjs);
+		  break;
+
+	  case F3:
+		  pullmenudown(&bt_gytd,GYTD_NUM,gytd);
+		  break;
+
+	  case BACK:
+		  return EXIT;
+
+	  case ENTER:
+			 	 state=init_cargo_s(car_num,box);
+			 	 if(state==EXIT)
+			 	 {
+			 	 	 state=0;
+			 	 	 time=1;
+			 	 	 break;
+			 	 }
+		  break;
+
+	  case ESC:
+		   readbmp("wenjian\\byebye.bmp");
+		   exit(0);
+		   break;
+	 }
+   }
+}
+
+/*车辆初始化的界面*/
+int Win_CarInit_d()
+{
+  int  car_num[3]={0,0,0};
+  int state=0,time=1;
+  int i=0;
+  BOX box[3]={
+				   {RIN_X0+RIN_LEN-75-16*3+1,RIN_Y0+RIN_WID/2-9+15,16*3,18,-1,-1,0},//东
+				   {RIN_X0+RIN_LEN/2-16-8,RIN_Y0+RIN_WID-40-15,16*3,18,-1,-1,0},  //南
+				   {RIN_X0+75,RIN_Y0+RIN_WID/2-9+15,16*3,18,-1,-1,0},                //西
+				     };
+
+  while(1)
+  {
+  	if(time==1)
+  	{
+  		  init_VGA();
+  		  cleardevice();
+        draw_winbk();
+        show_winname("车辆初始化",5);
+        draw_bt(&bt_xtsj,BLACK,16);
+        draw_bt(&bt_yhdy,BLACK,16);
+        draw_bt(&bt_xtmr,BLACK,16);
+        draw_bt(&bt_back,YELLOW,16);
+        draw_bt(&bt_go,YELLOW,16);        
+        draw_roadin_d(RIN_X0,RIN_Y0+30,RIN_LEN,RIN_WID-30,RIN_RWID);
+	      for(i=0;i<3;i++)
+	      {
+			     draw_box(&box[i],LIGHTGRAY);
+	      }
+        init_mouse();
+        time=0;
+  	}
+	MS.mstate=read_mouse();
+	switch(MS.mstate)
+	{
+	  case 0:
+		   do_mouse_move();
+		   do_carinit_mouse_move();
+		   break;
+
+	  case 1:
+		   do_left_click();
+		   if(mouse_onbt(&bt_xtsj))
+			   sys_random(box,3);
+		   if(mouse_onbt(&bt_yhdy))
+			   do_initcar(box,3);
+		   if(mouse_onbt(&bt_xtmr))
+			   sys_moren(box,3);
+		   if(mouse_onbt(&bt_back))
+			 	  return EXIT;
+		   if(mouse_onbt(&bt_go))
+			 {
+			 	 state=init_cargo_d(car_num,box);
+			 	 if(state==EXIT)
+			 	 {
+			 	 	 state=0;
+			 	 	 time=1;
+			 	 	 break;
+			 	 }
+			 }
+		   break;
+
+	  case 2:
+		       break;
+
+	  case F1:
+		  pullmenudown(&bt_czsm,CZSM_NUM,czsm);
+		  break;
+
+	  case F2:
+		  pullmenudown(&bt_gnjs,GNJS_NUM,gnjs);
+		  break;
+
+	  case F3:
+		  pullmenudown(&bt_gytd,GYTD_NUM,gytd);
+		  break;
+
+	  case BACK:
+		  return EXIT;
+		  
+    case ENTER:
+			 	 state=init_cargo_d(car_num,box);
+			 	 if(state==EXIT)
+			 	 {
+			 	 	 state=0;
+			 	 	 time=1;
+			 	 	 break;
+			 	 }
+	  case ESC:
+		   readbmp("wenjian\\byebye.bmp");
+		   exit(0);
+		   break;
+	 }
+   }
+}
+
+
+/*智能与常规仿真模式选择界面*/
+int Win_IntOrNor_s(int car_num[],struct CAR *car)
+{
+  int lampflag=-1;                   //仿真模式标志位
+  int state=0,time=1;
+  struct TM ntm={0,0},itm={0,0};     //统计相对时间 
+  while(1)
+  {
+  	if(time==1)
+  	{
+  		  init_VGA();
+  		  cleardevice();
+        draw_winbk();
+        show_winname("智能与常规仿真选择",9);
+        draw_bt(&bt_intfz,BLACK,16);
+        draw_bt(&bt_usufz,BLACK,16);
+        draw_bt(&bt_back,YELLOW,16);
+        init_mouse();
+        time=0;
+  	}
+	MS.mstate=read_mouse();
+	switch(MS.mstate)
+	{
+	  case 0:
+		   do_mouse_move();
+		   if(mouse_onbt(&bt_intfz))
+			   hlight_bt(&bt_intfz);
+		   if(mouse_onbt(&bt_usufz))
+			   hlight_bt(&bt_usufz);
+		   if(mouse_onbt(&bt_back))
+			   hlight_bt(&bt_back);
+
+		   break;
+
+	  case 1:
+		   do_left_click();
+		   if(mouse_onbt(&bt_intfz))
+		   {
+			   lampflag=1;
+			   closegraph();
+			   state=fz_s(car_num,lampflag,car,&ntm,&itm);
+			   if(state==EXIT)
+			   {
+			   	    state=0;
+			   	    time=1;
+			   	    break;
+			   }
+		   }
+		   if(mouse_onbt(&bt_usufz))
+		   {
+			   lampflag=0;
+			   closegraph();
+			   state=fz_s(car_num,lampflag,car,&ntm,&itm);
+			   if(state==EXIT)
+			   {
+			   	    state=0;
+			   	    time=1;
+			   	    break;
+			   }
+		   }
+		   if(mouse_onbt(&bt_back))
+            	return EXIT;
+           break;
+
+      case 2:
+           break;
+
+      case F1:
+            pullmenudown(&bt_czsm,CZSM_NUM,czsm);
+            break;
+
+      case F2:
+             pullmenudown(&bt_gnjs,GNJS_NUM,gnjs);
+             break;
+
+      case F3:
+             pullmenudown(&bt_gytd,GYTD_NUM,gytd);
+             break;
+             
+      case BACK:
+			   return EXIT;
+
+      case ESC:
+		   readbmp("wenjian\\byebye.bmp");
+		   exit(0);
+		   break;
+
+	 }
+   }
+}
+
+/*智能与常规仿真模式选择界面*/
+int Win_IntOrNor_d(int car_num[],struct CAR *car)
+{
+  int lampflag=-1;                   //仿真模式标志位
+  int state=0,time=1;
+  struct TM ntm={0,0},itm={0,0};     //统计相对时间 
+  while(1)
+  {
+  	if(time==1)
+  	{
+  		  init_VGA();
+  		  cleardevice();
+        draw_winbk();
+        show_winname("智能与常规仿真选择",9);
+        draw_bt(&bt_intfz,BLACK,16);
+        draw_bt(&bt_usufz,BLACK,16);
+        draw_bt(&bt_back,YELLOW,16);
+        init_mouse();
+        time=0;
+  	}
+	MS.mstate=read_mouse();
+	switch(MS.mstate)
+	{
+	  case 0:
+		   do_mouse_move();
+		   if(mouse_onbt(&bt_intfz))
+			   hlight_bt(&bt_intfz);
+		   if(mouse_onbt(&bt_usufz))
+			   hlight_bt(&bt_usufz);
+		   if(mouse_onbt(&bt_back))
+			   hlight_bt(&bt_back);
+		   break;
+
+	  case 1:
+		   do_left_click();
+		   if(mouse_onbt(&bt_intfz))
+		   {
+			   lampflag=1;
+			   closegraph();
+			   state=fz_d(car_num,lampflag,car,&ntm,&itm);
+			   if(state==EXIT)
+			   {
+			   	    state=0;
+			   	    time=1;
+			   	    break;
+			   }
+		   }
+		   if(mouse_onbt(&bt_usufz))
+		   {
+			   lampflag=0;
+			   closegraph();
+			   state=fz_d(car_num,lampflag,car,&ntm,&itm);
+			   if(state==EXIT)
+			   {
+			   	    state=0;
+			   	    time=1;
+			   	    break;
+			   }
+		   }
+		   if(mouse_onbt(&bt_back))
+            	return EXIT;
+           break;
+
+      case 2:
+           break;
+
+      case F1:
+            pullmenudown(&bt_czsm,CZSM_NUM,czsm);
+            break;
+
+      case F2:
+             pullmenudown(&bt_gnjs,GNJS_NUM,gnjs);
+             break;
+
+      case F3:
+             pullmenudown(&bt_gytd,GYTD_NUM,gytd);
+             break;
+             
+      case BACK:
+			   return EXIT;
+
+      case ESC:
+		   readbmp("wenjian\\byebye.bmp");
+		   exit(0);
+		   break;
+
+	 }
+   }
+}
+
+
+void menu()
+{
+  randomize();
+  Win_ShiOrDing();
+}

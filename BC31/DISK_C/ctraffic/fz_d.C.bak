@@ -1,0 +1,427 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <dos.h>
+#include <bios.h>
+#include <conio.h>
+#include <graphics.h>
+#include "all.h"
+#include "drawtool.h"
+#include "readbmp.h"
+#include "init_d.h"
+#include "fz_d.h"
+#include "fenxi_d.h"
+#include "fenxi_s.h"
+#include "car_d.h"
+#include "lamp_d.h"
+
+/******计时归零的函数********/
+void time_zero_d(int *count,struct TM *tm)
+{
+	*count=0;
+	tm->minute=0;
+	tm->second=0;
+}
+
+//画第一页
+void drawpage1_d(struct CAR *p,struct LAMP *pl,int n,struct TM *ntm,int *count,int *tg)
+{
+	int i=0;
+  setactivepage(1);
+	draw_road_d();
+	draw_gg_d(count,ntm,tg);
+	for(i=0;i<n;i++)
+		draw_car(&p[i]);
+	for(i=0;i<3;i++)
+		draw_lamp_d(&pl[i]);
+	setvisualpage(1);
+}
+
+//画第零页
+void drawpage0_d(struct CAR *p,struct LAMP *pl,int n,struct TM *ntm,int *count,int *tg)
+{
+	int i=0;
+	setactivepage(0);
+	draw_road_d();	
+	draw_gg_d(count,ntm,tg);
+	for(i=0;i<n;i++)
+		draw_car(&p[i]);
+	for(i=0;i<3;i++)
+		draw_lamp_d(&pl[i]);
+	setvisualpage(0);
+}
+
+/*按常规仿真按钮后进入的函数，实行普通交通仿真运行的函数，被gogogo调用*/
+int normal_d(struct CAR *p,struct LAMP *pl,int n,int *reflag,struct TM *ntm,struct TM *itm)
+{
+	int key=0,f=0,time=1;
+	int i=0,j=0,count=0;
+	struct CAR recar[CAR_MAX * 3];
+	struct LAMP relamp[3];
+	int tg[3]={TGREEN,TGREEN,TGREEN};
+	*reflag=0;       //重播标志位
+  ntm->minute=0;   //计时清零
+  ntm->second=0;
+  
+	for(i=0;i<n;i++) //车辆及红绿灯数据备份
+		recar[i]=p[i];
+	for(j=0;j<3;j++)
+		relamp[j]=pl[j];
+		
+	  //整个动画的操作
+	  while(1)
+	  {
+	  delay(10);
+		drawpage1_d(recar,relamp,n,ntm,&count,tg);
+		control_car_d(recar,relamp,n);
+		control_norlamp_d(relamp,reflag);
+		while(f==0)            //仿真开始时的开始操作
+		{
+			if(time==1)
+			{
+				draw_play(BXO-3*RY-FW-10,BY-FH-20,0);
+			  time=0;
+			}
+			if(kbhit())
+			{
+				key=bioskey(0);
+				if(key==START)
+					f=1;
+				if(key==ESC)
+					{
+						readbmp("wenjian\\byebye.bmp");
+						exit(0);
+					}
+			  if(key==BACK)
+			  {
+			  	 *reflag=1;
+					 time_zero_d(&count,ntm);
+					 control_norlamp_d(relamp,reflag);
+				   return EXIT;
+				}
+			}
+		}
+		delay(10);
+		drawpage0_d(recar,relamp,n,ntm,&count,tg);
+		control_car_d(recar,relamp,n);
+		control_norlamp_d(relamp,reflag);
+
+		if(kbhit())
+		{
+			key=bioskey(0);
+			switch(key)
+			{
+				case ESC:
+						 readbmp("wenjian\\byebye.bmp");
+						 exit(0);
+						 break;
+
+				case BACK:
+						  *reflag=1;
+						  time_zero_d(&count,ntm);
+						  control_norlamp_d(relamp,reflag);
+						  return EXIT;
+
+				case PAUSE:
+						 draw_play(BXO-3*RY-FW-10,BY-FH-20,0);
+						   while(1)
+						   {
+							   if(kbhit())
+							   {
+								   key=bioskey(0);
+								   if(key==ESC)
+								   {
+									 readbmp("wenjian\\byebye.bmp");
+									 exit(0);
+								   break;
+							     }
+								   if(key==START)								   	 
+									   break;
+									 if(key==REPLAY)
+										{
+											*reflag=1;
+											time_zero_d(&count,ntm);
+											draw_replay(BXO+3*RY+10,BY-FH-20,1);
+											control_norlamp_d(relamp,reflag);
+											return 1;
+										}
+									if(key==BACK)
+									{
+											*reflag=1;
+											time_zero_d(&count,ntm);
+											control_norlamp_d(relamp,reflag);
+						          return EXIT;
+						      }
+							   }
+						   }
+						   break;
+
+				case REPLAY:
+							*reflag=1;
+							time_zero_d(&count,ntm);
+							draw_replay(BXO+3*RY+10,BY-FH-20,1);
+							control_norlamp_d(relamp,reflag);
+							return 1;
+       }
+     }
+     if(check_off_d(recar,n))
+     {
+     	 draw_fenxi();
+     	 while(1)
+     	 {
+     	 	if(kbhit())
+     	 		{
+     	 			key=bioskey(0);
+     	 			if(key==ENTER)
+     	 			{
+     	 				closegraph();
+     	 				fenxi_d(p,recar,ntm,itm,n);
+     	 				init_EGA();
+     	 				break;
+     	 			}
+     	 			if(key==REPLAY)
+     	 			{
+     	 				*reflag=1;
+							time_zero_d(&count,ntm);
+							draw_replay(BXO+3*RY+10,BY-FH-20,1);
+							control_norlamp_d(relamp,reflag);
+							return 1;
+     	 			} 
+     	 			if(key==ESC)
+     	 			{
+     	 				readbmp("wenjian\\byebye.bmp");
+     	 				exit(0);
+     	 			} 
+						if(key==BACK)
+						{
+							*reflag=1;
+							control_norlamp_d(relamp,reflag);
+						  return EXIT;
+						}				
+     	 		}
+     	 }
+     }
+     check_sp(recar,n);
+   }
+}
+
+/*按常规仿真按钮后进入的函数，实行普通交通仿真运行的函数，被start调用*/
+int intell_d(struct CAR *p,struct LAMP *pl,int n,int *reflag,struct TM *ntm,struct TM *itm)
+{
+	int key=0,f=0,time=1;
+	int i=0,j=0,count=0;
+	struct CAR recar[CAR_MAX * 3];
+	struct LAMP relamp[3];
+  int tg[3]={0,0,0};  // 智能仿真扫描时存储绿灯时间
+	*reflag=0;       //重播标志位
+  itm->minute=0;   //计时清零
+  itm->second=0;
+
+	for(i=0;i<n;i++) //车辆及红绿灯数据备份
+		recar[i]=p[i];
+	for(j=0;j<3;j++)
+		relamp[j]=pl[j];
+
+	  //整个动画的操作
+	  while(1)
+	  {
+	  delay(10);
+		drawpage1_d(recar,relamp,n,itm,&count,tg);
+		control_car_d(recar,relamp,n);
+		control_intlamp_d(recar,n,relamp,tg,reflag);
+		while(f==0)            //仿真开始时的开始操作
+		{
+			if(time==1)
+			{
+				draw_play(BXO-3*RY-FW-10,BY-FH-20,0);
+			  time=0;
+			}
+			if(kbhit())
+			{
+				key=bioskey(0);
+				if(key==START)
+					f=1;
+				if(key==ESC)
+					{
+						readbmp("wenjian\\byebye.bmp");
+						exit(0);
+					}
+			  if(key==BACK)
+			  {
+					  *reflag=1;
+						time_zero_d(&count,itm);
+					  control_intlamp_d(recar,n,relamp,tg,reflag);
+						return EXIT;
+				}
+			}
+		}
+		delay(10);
+		drawpage0_d(recar,relamp,n,itm,&count,tg);
+		control_car_d(recar,relamp,n);
+		control_intlamp_d(recar,n,relamp,tg,reflag);
+
+		if(kbhit())
+		{
+			key=bioskey(0);
+			switch(key)
+			{
+				case ESC:
+						 readbmp("wenjian\\byebye.bmp");
+						 exit(0);
+						 break;
+
+				case BACK:
+							*reflag=1;
+							time_zero_d(&count,itm);
+							control_intlamp_d(recar,n,relamp,tg,reflag);
+						  return EXIT;
+
+				case PAUSE:
+					     draw_play(BXO-3*RY-FW-10,BY-FH-20,0);
+						   while(1)
+						   {
+							   if(kbhit())
+							   {
+								   key=bioskey(0);
+								   if(key==ESC)
+								   {
+									 readbmp("wenjian\\byebye.bmp");
+									 exit(0);
+								   break;
+							     }
+								   if(key==START)								   	 
+									   break;
+									 if(key==REPLAY)
+										{
+											*reflag=1;
+											time_zero_d(&count,itm);
+											draw_replay(BXO+3*RY+10,BY-FH-20,1);
+											control_intlamp_d(recar,n,relamp,tg,reflag);
+											return 1;
+										}
+									if(key==BACK)
+									{
+							        *reflag=1;
+							        time_zero_d(&count,itm);
+							        control_intlamp_d(recar,n,relamp,tg,reflag);
+						          return EXIT;
+						      }
+							   }
+						   }
+						   break;
+
+				case REPLAY:
+							*reflag=1;
+							time_zero_d(&count,itm);
+							draw_replay(BXO+3*RY+10,BY-FH-20,1);
+							control_intlamp_d(recar,n,relamp,tg,reflag);
+							return 1;
+       }
+     }
+     if(check_off_d(recar,n))
+     {
+     	 draw_fenxi();
+     	 while(1)
+     	 {
+     	 	if(kbhit())
+     	 		{
+     	 			key=bioskey(0);
+     	 			if(key==ENTER)
+     	 			{
+     	 				closegraph();
+     	 				fenxi_d(p,recar,ntm,itm,n);
+     	 				init_EGA();
+     	 				break;
+     	 			}
+     	 			if(key==REPLAY)
+     	 			{
+     	 				*reflag=1;
+							time_zero_d(&count,itm);
+							draw_replay(BXO+3*RY+10,BY-FH-20,1);
+							control_intlamp_d(recar,n,relamp,tg,reflag);
+							return 1;
+     	 			} 
+     	 			if(key==ESC)
+     	 			{
+     	 				readbmp("wenjian\\byebye.bmp");
+     	 				exit(0);
+     	 			} 
+			      if(key==BACK)
+			      {
+					    *reflag=1;
+					    control_intlamp_d(recar,n,relamp,tg,reflag);
+						  return EXIT;
+				    }	 					
+     	 		}
+     	 }
+     }
+   }
+}
+
+//仿真的执行函数，被fz()调用
+int start_d(int *pnum,struct CAR *p,struct LAMP *pl,int lampflag,struct TM *ntm,struct TM *itm)
+{
+
+    int nreflag=0,ireflag=0;           //是否重播标志位
+    int state=0;                       //int flag=EXITSTATE;
+    int n=pnum[0]+pnum[1]+pnum[2];
+    init_lamp_d(pl);//交通灯初始化
+
+    while(1)
+    {
+        if(lampflag==1&&ireflag==0)
+        {
+            state=intell_d(p,pl,n,&ireflag,ntm,itm);//智能仿真运行
+            if(state==EXIT)
+            {
+            	state=0;
+            	return EXIT;
+            }
+        }
+
+        if(lampflag==0&&nreflag==0)
+        {
+            state=normal_d(p,pl,n,&nreflag,ntm,itm);//常规仿真运行
+            if(state==EXIT)
+            {
+            	state=0;
+            	return EXIT;
+            }
+        }
+       
+        //重播时执行的函数
+        if(nreflag==1)        //常规仿真重播
+            {
+            	state=normal_d(p,pl,n,&nreflag,ntm,itm);
+            	if(state==EXIT)
+            	{
+            		state=0;
+            		return EXIT;
+            	}
+            }
+        if(ireflag==1)   // 智能仿真重播
+            {
+            	state=intell_d(p,pl,n,&ireflag,ntm,itm);
+            	if(state==EXIT)
+            	{
+            		state=0;
+            		return EXIT;
+            	}
+            }       
+    }
+}
+
+
+int fz_d(int *car_num,int lampflag,struct CAR *car,struct TM *ntm,struct TM *itm)
+{
+	  int state=0;
+    struct LAMP lamp[3];
+    init_EGA();
+    state=start_d(car_num,car,lamp,lampflag,ntm,itm);
+    if(state==EXIT)
+    { 
+    	state=0;	
+    	closegraph();
+    	return EXIT;
+	}
+	else return 0;
+}
