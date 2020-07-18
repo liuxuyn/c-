@@ -1,0 +1,1272 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <conio.h>
+#include <graphics.h>
+#include <math.h>
+#include "all.h"
+#include "drawtool.h"
+#include "mouse.h"
+
+extern struct MOUSE
+{
+	int mx;
+	int my;
+	int mstate;
+}MS;
+
+/*VGA显卡驱动*/
+void init_VGA(void)
+{
+	int gdriver=VGA,gmode=VGAHI;
+	initgraph(&gdriver,&gmode,"wenjian");
+}
+
+/*EGA显卡驱动*/
+void init_EGA(void)
+{
+	int gdriver=EGA,gmode=EGAHI;
+	initgraph(&gdriver,&gmode,"wenjian");
+}
+
+//16点阵汉字输出
+void out_text16(int x,int y,char s[],int color)
+{
+   FILE *fp;
+   char buffer[32],word[2]={'\0','\0'};
+   register i,j,k;
+   unsigned char qh,wh;/*记录汉字库地址*/
+   unsigned long location;
+   settextstyle(0,0,1);
+   if((fp=fopen("wenjian\\hzk16","rb"))==NULL)
+   {
+	   printf("Can't open hzk16!");
+	   getch();
+	   exit(0);
+   }
+   while(*s)
+   {
+	 if((int)(*s)>0&&(int)(*s)<128)/*ASCII可表示*/
+	 {
+		  setcolor(color);
+		  word[0]=*s;
+		  outtextxy(x+4,y+4,word);
+		  s+=1;
+		  x+=16;
+	 }
+	 else
+	 {
+		  qh=*s-0xa0;
+		  wh=*(s+1)-0xa0;
+		  location=(94*(qh-1)+(wh-1))*32L;/*计算位移量*/
+		  fseek(fp,location,SEEK_SET);
+		  fread(buffer,32,1,fp);/*读出点阵信息*/
+		  for(i=0;i<16;i++)
+		  {
+			   for(j=0;j<2;j++)
+			   {
+				 for(k=0;k<8;k++)
+				 {
+				  if((buffer[i*2+j]>>(7-k))&0x1)  /*为1的位显示*/
+						 putpixel(x+8*j+k,y+i,color);
+				 }
+			   }
+		  }
+		  s+=2;
+		  x+=16;
+	   }
+ }
+ fclose(fp);
+}
+
+/*12点阵小字体汉字输出*/
+void out_text12(int x,int y,char s[],int color)
+{
+   FILE *fp;
+   char buffer[24],word[2]={'\0','\0'};
+   register i,j,k;
+   unsigned char qh,wh;
+   unsigned long location;
+   settextstyle(0,0,1);
+   if((fp=fopen("wenjian\\hzk12","rb"))==NULL)
+   {
+	   printf("Can't open hzk12!");
+	   getch();
+	   exit(0);
+   }
+   while(*s)
+   {
+	 if((int)(*s)>0&&(int)(*s)<128)
+	 {
+		  setcolor(color);
+		  word[0]=*s;
+		  outtextxy(x+2,y+4,word);
+		  s+=1;
+		  x+=12;
+	 }
+	 else
+	 {
+		  qh=*s-0xa0;
+		  wh=*(s+1)-0xa0;
+		  location=(94*(qh-1)+(wh-1))*24L;
+		  fseek(fp,location,SEEK_SET);
+		  fread(buffer,24,1,fp);
+		  for(i=0;i<12;i++)
+		  {
+			   for(j=0;j<2;j++)
+			   {
+				 for(k=0;k<8;k++)
+				 {
+				  if((buffer[i*2+j]>>(7-k))&0x1)
+					  putpixel(x+8*j+k,y+i,color);
+				 }
+			   }
+		  }
+		  s+=2;
+		  x+=12;
+	   }
+ }
+ fclose(fp);
+}
+
+/*汉字及字符输出函数*/
+void word_write(int x,int y,unsigned char *word,int color,unsigned char charsize)
+{
+	if(charsize<=12)
+	{
+		out_text12(x,y,word,color);
+	}
+	else
+	{
+		out_text16(x,y,word,color);
+	}
+
+}
+
+/*画通用背景及通用“温馨提示”的函数*/
+void draw_bk()
+{
+	setbkcolor(BLACK);
+	setfillstyle(1,BROWN);
+	bar(STARTX,STARTY,ENDX,ENDY);
+	setcolor(BLACK);
+	rectangle(STARTX+1,STARTY+1,ENDX-1,STARTY+30);
+	rectangle(STARTX+1,STARTY+30,ENDX-1,STARTY+55);
+	rectangle(STARTX+1,STARTY+55,ENDX-1,ENDY-40);
+	rectangle(STARTX+1,ENDY-40,ENDX-1,ENDY-2);
+	line(STARTX+1,ENDY-1,ENDX-1,ENDY-1);
+	setfillstyle(1,DARKGRAY);        //界面名行
+	bar(STARTX+2,STARTY+2,ENDX-2,STARTY+29);
+	setfillstyle(1,LIGHTGRAY);
+	bar(STARTX+2,STARTY+31,ENDX-2,STARTY+54);
+	setfillstyle(1,DARKGRAY);
+	bar(STARTX+2,STARTY+56,ENDX-2,ENDY-41);
+	setfillstyle(1,LIGHTGRAY);
+	bar(STARTX+2,ENDY-39,ENDX-2,ENDY-3);
+
+	word_write(STARTX+10,ENDY-28,"温馨提示:",BLUE,16);
+	setcolor(BLACK);
+	line(STARTX+10+5*16,ENDY-40,STARTX+10+5*16,ENDY-2);
+}
+
+
+/*当鼠标移到按钮上时，画按钮边框的函数*/
+void draw_btlight(BT *bt,int state)
+{
+
+
+	if(state==1)         //if(bt->btstate==1)                //鼠标在按钮上但没按下
+	{
+		setcolor(BLACK);
+		line(bt->btx1-BTDX ,bt->bty1-BTDY,bt->btx2+BTDX ,bt->bty1-BTDY);
+		line(bt->btx1-BTDX ,bt->bty2+BTDY,bt->btx2+BTDX ,bt->bty2+BTDY);
+		line(bt->btx1-BTDX ,bt->bty1-BTDY,bt->btx1-BTDX ,bt->bty2+BTDY);
+		line(bt->btx2+BTDX ,bt->bty1-BTDY,bt->btx2+BTDX ,bt->bty2+BTDY);
+	}
+	if(state==2)           //if(bt->btstate==2)                 //鼠标在按钮上且按下
+	{
+		setcolor(BLACK);
+		line(bt->btx1-BTDX ,bt->bty1-BTDY,bt->btx1-BTDX ,bt->bty2+BTDY);
+		line(bt->btx1-BTDX ,bt->bty1-BTDY,bt->btx2+BTDX ,bt->bty1-BTDY);
+		setcolor(WHITE);
+		line(bt->btx2+BTDX ,bt->bty1-BTDY,bt->btx2+BTDX ,bt->bty2+BTDY);
+		line(bt->btx1-BTDX ,bt->bty2+BTDY,bt->btx2+BTDX ,bt->bty2+BTDY);
+
+	}
+	if(state==0)          //if(bt->btstate==0)                 //鼠标不在按钮上
+	{
+		setcolor(WHITE);
+		line(bt->btx1-BTDX ,bt->bty1-BTDY,bt->btx1-BTDX ,bt->bty2+BTDY);
+		line(bt->btx1-BTDX ,bt->bty1-BTDY,bt->btx2+BTDX ,bt->bty1-BTDY);
+		setcolor(BLACK);
+		line(bt->btx2+BTDX ,bt->bty1-BTDY,bt->btx2+BTDX ,bt->bty2+BTDY);
+		line(bt->btx1-BTDX ,bt->bty2+BTDY,bt->btx2+BTDX ,bt->bty2+BTDY);
+
+	}
+}
+
+
+/*通用按钮名字及边框*/
+void draw_bt(BT *bt,int color,int charsize)   //按钮，字体颜色，和字体大小
+{
+	word_write(bt->btx1,bt->bty1,bt->btname,color,charsize);
+	draw_btlight(bt,0);
+
+}
+
+/*画洋红色线*/
+void Mline(int x0,int y0,int x1,int y1)
+{
+	setcolor(MAGENTA);
+	line(x0,y0,x1,y1);
+}
+
+/*画半径为2个像素的实心黑点*/
+void pot(int x,int y)
+{
+	setfillstyle(1,BLACK);
+	setcolor(BLACK);
+	fillellipse(x,y,2,2);
+}
+
+/*温馨提示显示函数*/
+void msg(char *word)
+{
+	word_write(STARTX+10+5*16+40,ENDY-28,word,RED,16);
+}
+
+/*擦去提示内容*/
+void msgoff()
+{
+	setfillstyle(1,LIGHTGRAY);
+	bar(STARTX+10+5*16+1,ENDY-39,ENDX-2,ENDY-3);
+}
+
+/*开一个某颜色的窗口*/
+void win(int sx,int sy,int ex,int ey,int color)
+{
+	setfillstyle(1,color);
+	bar(sx,sy,ex,ey);
+	setcolor(BLACK);
+	rectangle(sx,sy,ex,ey);
+}
+/*画menu界面通用按钮*/
+void draw_winbk()
+{
+	 BT bt_czsm={STARTX+10,STARTY+30+8,STARTX+10+71,STARTY+30+8+11,
+	 	           "操作说明F1","关于本系统操作的介绍"};
+   BT bt_gnjs={STARTX+81+20,STARTY+38,STARTX+81+20+71,STARTY+49,
+   	           "功能介绍F2","关于本系统功能的简介"};
+   BT bt_gytd={STARTX+172+20,STARTY+38,STARTX+172+20+71,STARTY+49,
+   	           "关于团队F3","制作人员的简介"};
+   BT bt_exit={ENDX-33-36,STARTY+38,ENDX-10,STARTY+49,
+   	           "退出ESC","按下将退出系统"};
+   draw_bk();
+   draw_bt(&bt_czsm,DARKGRAY,12);
+   draw_bt(&bt_gnjs,DARKGRAY,12);
+   draw_bt(&bt_gytd,DARKGRAY,12);
+   draw_bt(&bt_exit,DARKGRAY,12);
+}
+
+
+/*界面名显示函数*/
+void show_winname(char *winname,int n)
+{
+	word_write(ENDX/2-16*(n/2)-8*(n%2),STARTY+7,winname,BLACK,16);
+}
+
+/*高亮按钮*/
+void hlight_bt(BT *bt)
+{
+  hide_mouse();
+	draw_btlight(bt,1);
+	msgoff();                        //将按钮高亮为鼠标在上面但没按下的状态
+	msg(bt->btmsg);   
+	show_mouse();                        //在温馨提示处显示按钮名
+	while(mouse_onbt(bt))			//在没有输入的情况下，一直高亮
+	{
+		MS.mstate=read_mouse();
+		if(MS.mstate!=0)  break;
+		if(kbhit())       break;
+
+	}
+
+	hide_mouse();
+	draw_btlight(bt,0);               //消除按钮高亮状态                     
+	msgoff();		                         //清除温馨提示
+	show_mouse();
+}
+
+/*画十字车辆初始化界面时的路面函数*/
+void draw_roadin_s(int x0,int y0,int len,int wid,int rwid)
+{
+	  int x1=x0+len,y1=y0+wid;
+	  int midx=(x0+x1)/2,midy=(y0+y1)/2;
+	  int poly[26];
+	  
+	  poly[0]=midx-rwid/2;            //1
+	  poly[1]=y0;          
+	    
+	  poly[2]=poly[0];                 //2
+	  poly[3]=y0+(y1-y0-rwid)/2;   
+	  
+	  poly[4]=x0;                      //3
+	  poly[5]=poly[3];                       
+	  	  
+	  poly[6]=x0;                       //4
+	  poly[7]=poly[5]+rwid;
+	  
+	  poly[8]=poly[0];                  //5
+	  poly[9]=poly[7];
+	  
+	  poly[10]=poly[0];                 //6
+	  poly[11]=y1;
+	  
+	  poly[12]=midx+rwid/2;             //7
+	  poly[13]=y1;
+	  
+	  poly[14]=poly[12];                //8
+	  poly[15]=y1-(y1-y0-rwid)/2;
+	  
+	  poly[16]=x1;                      //9
+	  poly[17]=poly[15];
+	  
+	  poly[18]=x1;                      //10
+	  poly[19]=poly[17]-rwid;
+	  
+	  poly[20]=poly[14];                //11
+	  poly[21]=poly[19];
+	            
+	  poly[22]=poly[20];                //12 
+ 	  poly[23]=y0;
+ 	  
+ 	  poly[24]=poly[0];                  //13
+ 	  poly[25]=poly[1];	  
+ 	  
+ 	  setfillstyle(1,LIGHTGRAY);        //路四周的颜色
+ 	  bar(x0,y0,x1,y1);
+ 	  
+	  setfillstyle(1,DARKGRAY);
+ 	  setcolor(BLACK);
+	  fillpoly(12,poly);
+ 	  setcolor(BLACK);
+ 	  rectangle(x0,y0,x1,y1);
+ 	  
+ 	  rectangle(x0,y0-20,x1,y0);
+    
+    word_write(x0+len/2-16*3-8,y0-18,"路 面 预 览",MAGENTA,16); 	  
+ 	  word_write(midx-16-8,y0+20,"北四路",BLACK,16);
+ 	  word_write(x0+20,midy-8,"西三路",BLACK,16);
+ 	  word_write(midx-16-8,y1-20-15,"南二路",BLACK,16);
+ 	  word_write(x1-20-16*3+1,midy-8,"东一路",BLACK,16);
+ 	  
+ 	  
+}
+
+/*画丁字车辆初始化界面时的路面函数*/
+void draw_roadin_d(int x0,int y0,int len,int wid,int rwid)
+{
+	  int x1=x0+len,y1=y0+wid;
+	  int midx=(x0+x1)/2,midy=(y0+y1)/2;
+	  int poly[16];
+	  
+	  poly[0]=x0;                      //3
+	  poly[1]=y0+(y1-y0-rwid)/2;                       
+	  	  
+	  poly[2]=x0;                       //4
+	  poly[3]=poly[1]+rwid;
+	  
+	  poly[4]=midx-rwid/2;                  //5
+	  poly[5]=poly[3];
+	  
+	  poly[6]=poly[4];                 //6
+	  poly[7]=y1;
+	  
+	  poly[8]=midx+rwid/2;             //7
+	  poly[9]=y1;
+	  
+	  poly[10]=poly[8];                //8
+	  poly[11]=y1-(y1-y0-rwid)/2;
+	  
+	  poly[12]=x1;                      //9
+	  poly[13]=poly[11];
+	  
+	  poly[14]=x1;                      //10
+	  poly[15]=poly[13]-rwid;	  
+ 	  
+ 	  setfillstyle(1,LIGHTGRAY);        //路四周的颜色
+ 	  bar(x0,y0,x1,y1);
+ 	  
+	  setfillstyle(1,DARKGRAY);
+ 	  setcolor(BLACK);
+	  fillpoly(8,poly);
+ 	  setcolor(BLACK);
+ 	  rectangle(x0,y0,x1,y1);
+ 	  
+ 	  rectangle(x0,y0-20,x1,y0);
+    
+    word_write(x0+len/2-16*3-8,y0-18,"路 面 预 览",MAGENTA,16); 	  
+ 	  word_write(x0+20,midy-8,"西三路",BLACK,16);
+ 	  word_write(midx-16-8,y1-20-15,"南二路",BLACK,16);
+ 	  word_write(x1-20-16*3+1,midy-8,"东一路",BLACK,16);
+ 	  
+ 	  
+}
+
+/*画输入框的函数*/
+void draw_box(BOX *box,int color)//(int x0,int y0,int len,int wid,int color)
+{
+		int x0=box->bx0;
+		int y0=box->by0;
+	  int x1=x0+box->blen;
+	  int y1=y0+box->bwid;
+	  
+	  setfillstyle(1,color);
+	  bar(x0,y0,x1,y1);
+	  
+	  setcolor(BLACK);
+	  rectangle(x0,y0,x1,y1);
+	  
+}
+
+/*画指北针*/
+void draw_eswn(int x,int y)
+{
+	//由东开始逆时针
+	int e1[6],e2[6];
+	int s1[6],s2[6];
+	int w1[6],w2[6];
+	int n1[6],n2[6];
+	int a=7,b=49,h=7;
+	//赋值
+	e1[0]=x;   e1[1]=y;
+	e1[2]=x+a; e1[3]=y-h;
+	e1[4]=x+b; e1[5]=y;	
+	e2[0]=x;   e2[1]=y;
+	e2[2]=x+a; e2[3]=y+h;
+	e2[4]=x+b; e2[5]=y;
+
+	s1[0]=x;   s1[1]=y;
+	s1[2]=x+h; s1[3]=y+a;
+	s1[4]=x;   s1[5]=y+b;	
+	s2[0]=x;   s2[1]=y;
+	s2[2]=x-h; s2[3]=y+a;
+	s2[4]=x;   s2[5]=y+b;
+	
+	w1[0]=x;   w1[1]=y;
+	w1[2]=x-a; w1[3]=y+h;
+	w1[4]=x-b; w1[5]=y;	
+	w2[0]=x;   w2[1]=y;
+	w2[2]=x-a; w2[3]=y-h;
+	w2[4]=x-b; w2[5]=y;
+
+	n1[0]=x;   n1[1]=y;
+	n1[2]=x-h; n1[3]=y-a;
+	n1[4]=x;   n1[5]=y-b;	
+	n2[0]=x;   n2[1]=y;
+	n2[2]=x+h; n2[3]=y-a;
+	n2[4]=x;   n2[5]=y-b;
+	//画并上色
+	setfillstyle(1,BLACK);
+	fillpoly(3,e1);
+	fillpoly(3,s1);
+	fillpoly(3,w1);
+	fillpoly(3,n1);
+	setfillstyle(1,WHITE);
+	fillpoly(3,e2);
+	fillpoly(3,s2);
+	fillpoly(3,w2);
+	fillpoly(3,n2);
+	//显示ewsn
+	setcolor(YELLOW);
+	settextstyle(0,0,1);
+	outtextxy(x+b-16,y-16,"E");
+	outtextxy(x+8,y+b-8,"S");
+	outtextxy(x-b+8,y+8,"W");
+	outtextxy(x-16,y-b+8,"N");
+
+	//画边框
+	setcolor(BLACK);
+	rectangle(x-b-3,y-b-3,x+b+3,y+b+3);
+	rectangle(x-b-4,y-b-4,x+b+4,y+b+4);
+}
+
+
+/******显示时间的函数********/
+void draw_time(int *count,struct TM*tm)
+{
+	char t[6]={'0','0',':','0','0','\0'};
+	(*count)++;
+	if(*count==12)
+	{
+		*count=0;
+		tm->second++;
+		if(tm->second==60)
+		{
+			tm->second=0;
+			tm->minute++;
+		}
+	}
+	t[0]=tm->minute/10+'0';
+	t[1]=tm->minute%10+'0';
+	t[2]=':';
+	t[3]=tm->second/10+'0';
+	t[4]=tm->second%10+'0';
+  //显示
+	word_write(BX-150-4*16-10,BY-100,"相对时间",BLACK,16);
+	settextstyle(0,0,2);
+	outtextxy(BX-150,BY-100,t);
+  //画边框
+	setcolor(BLACK);
+	rectangle(BX-150-4*16-10-3,BY-100-4,BX-150+5*16+2,BY-100+16+2);
+	rectangle(BX-150-4*16-10-4,BY-100-5,BX-150+5*16+3,BY-100+16+3);
+}
+
+
+/*十字显示绿灯时间的函数*/
+void draw_4g(int g[])
+{
+	int i=0;
+	char ch[4][3];
+	for(i=0;i<4;i++)
+	{
+		ch[i][0]=g[i]/10+'0';
+		ch[i][1]=g[i]%10+'0';
+		ch[i][2]='\0';
+	}
+	word_write(100,BY-90-20,"绿灯延时",GREEN,16);
+	word_write(90,BY-70-20,"东西直",WHITE,16);
+	word_write(90,BY-50-20,"东西左",WHITE,16);
+	word_write(90,BY-30-20,"南北直",WHITE,16);
+	word_write(90,BY-10-20,"南北左",WHITE,16);	
+	settextstyle(0,0,1);
+	setcolor(YELLOW);
+	//显示
+	outtextxy(90+16*3+20,BY-70-20+4,ch[0]);
+	outtextxy(90+16*3+20,BY-50-20+4,ch[1]);
+	outtextxy(90+16*3+20,BY-30-20+4,ch[2]);
+	outtextxy(90+16*3+20,BY-10-20+4,ch[3]);
+	//画边框
+	setcolor(BLACK);
+	rectangle(90-3,BY-90-20-2,90+16*3+20+8*2+2,BY-10-4+2);	
+	rectangle(90-4,BY-90-20-3,90+16*3+20+8*2+3,BY-10-4+3);
+}
+
+/*丁字路显示绿灯时间的函数*/
+void draw_3g(int g[])
+{
+	int i=0;
+	char ch[3][3];
+	for(i=0;i<3;i++)
+	{
+		ch[i][0]=g[i]/10+'0';
+		ch[i][1]=g[i]%10+'0';
+		ch[i][2]='\0';
+	}
+	word_write(105,BY-90-20,"绿灯延时",GREEN,16);
+	word_write(90,BY-65-20,"东西直",WHITE,16);
+	word_write(90,BY-40-20,"东左",WHITE,16);
+	word_write(90,BY-15-20,"南左",WHITE,16);	
+	settextstyle(0,0,1);
+	//显示
+	setcolor(YELLOW);
+	outtextxy(100+16*3+20,BY-65-20+4,ch[0]);
+	outtextxy(100+16*3+20,BY-40-20+4,ch[1]);
+	outtextxy(100+16*3+20,BY-15-20+4,ch[2]);	
+	//画边框
+	setcolor(BLACK);
+	rectangle(90-3,BY-90-20-2,100+16*3+20+8*2+2,BY-15-4+2);
+	rectangle(90-4,BY-90-20-3,100+16*3+20+8*2+3,BY-15-4+3);
+}
+
+
+/*画路周围四周*/
+void draw_gg_s(int *count,struct TM *tm,int *g)
+{
+	int x0=BXO,y0=BYO;
+	int bk[32],g1[10],g2[10],g3[10],g4[10];
+	BT bt_back={STARTX+20,BY-16-30,STARTX+20+31,BY-30+1,
+		          "返回","按下将返回到车辆与行人选择界面"};
+  BT bt_exit={BX-33-36,STARTY+20,ENDX-10,STARTY+31,
+		          "退出ESC","按下将退出系统"};
+	bk[0]=x0-3*RY;       bk[1]=y0-BY/2;
+	bk[2]=x0-3*RY;       bk[3]=y0-3*RX-RR;
+	bk[4]=x0-3*RY-RR;    bk[5]=y0-3*RX;
+	bk[6]=x0-BX/2;       bk[7]=y0-3*RX;
+	bk[8]=x0-BX/2;       bk[9]=y0+3*RX;
+	bk[10]=x0-3*RY-RR;   bk[11]=y0+3*RX;
+	bk[12]=x0-3*RY;      bk[13]=y0+3*RX+RR;
+	bk[14]=x0-3*RY;      bk[15]=y0+BY/2;
+  bk[16]=x0+3*RY;      bk[17]=y0+BY/2;
+	bk[18]=x0+3*RY;      bk[19]=y0+3*RX+RR;
+	bk[20]=x0+3*RY+RR;   bk[21]=y0+3*RX;
+	bk[22]=x0+BX/2;      bk[23]=y0+3*RX;
+	bk[24]=x0+BX/2;      bk[25]=y0-3*RX;
+	bk[26]=x0+3*RY+RR;   bk[27]=y0-3*RX;
+	bk[28]=x0+3*RY;      bk[29]=y0-3*RX-RR;
+	bk[30]=x0+3*RY;      bk[31]=y0-BY/2;
+	
+	g1[0]=bk[0];   g1[1]=bk[1];
+	g1[2]=bk[2];   g1[3]=bk[3];
+	g1[4]=bk[4];   g1[5]=bk[5];
+	g1[6]=bk[6];   g1[7]=bk[7];
+	g1[8]=0;       g1[9]=0;
+	
+	g2[0]=bk[8];   g2[1]=bk[9];
+	g2[2]=bk[10];  g2[3]=bk[11];
+	g2[4]=bk[12];  g2[5]=bk[13];
+	g2[6]=bk[14];  g2[7]=bk[15];
+	g2[8]=0;       g2[9]=BY-2;
+	
+	g3[0]=bk[16];  g3[1]=bk[17];
+	g3[2]=bk[18];  g3[3]=bk[19];
+	g3[4]=bk[20];  g3[5]=bk[21];
+	g3[6]=bk[22];  g3[7]=bk[23];
+	g3[8]=BX;      g3[9]=BY-2;
+	
+	g4[0]=bk[24];  g4[1]=bk[25];
+	g4[2]=bk[26];  g4[3]=bk[27];
+	g4[4]=bk[28];  g4[5]=bk[29];
+	g4[6]=bk[30];  g4[7]=bk[31];
+	g4[8]=BX;      g4[9]=0; 
+	
+	//setbkcolor(BLACK);                    //画四周绿地，如果bar的话会闪
+	setfillstyle(1,DARKGRAY);
+	setcolor(BLACK);
+	fillpoly(5,g1);
+	fillpoly(5,g2);
+	fillpoly(5,g3);
+	fillpoly(5,g4);
+	//画按钮
+  draw_play(BXO-3*RY-FW-10,BY-FH-20,1);
+  draw_replay(BXO+3*RY+10,BY-FH-20,0);
+  draw_bt(&bt_back,YELLOW,16);
+  draw_bt(&bt_exit,YELLOW,12);
+  //写说明
+  word_write(20+16*2,15,"  《操作说明》",BLACK,16);
+  word_write(20,35,"1、“空格”为播放/暂停键",RED,12);
+  word_write(20,50,"2、“R”为重播键",WHITE,12);
+  word_write(20,65,"3、“Backspace”返回上一界面",BLUE,12);
+  word_write(20,80,"4、“ESC”为退出键",YELLOW,12);
+  //画边框
+  setcolor(BLACK);
+  rectangle(20-3,15-3,246+3,80+16+2);
+  rectangle(20-4,15-4,246+4,80+16+3);
+  //计时
+  draw_time(count,tm);
+  draw_4g(g);
+  draw_eswn(BX-160,60);
+}
+
+/*画丁字路周围*/
+void draw_gg_d(int *count,struct TM *tm,int *g)
+{
+	int x0=BXO1,y0=BYO1;
+	int bk[20],g1[8],g2[10],g3[10];
+	BT bt_back={STARTX+20,BY-16-30,STARTX+20+31,BY-30+1,
+		          "返回","按下将返回到车辆与行人选择界面"};
+  BT bt_exit={BX-33-36,STARTY+20,ENDX-10,STARTY+31,
+		          "退出ESC","按下将退出系统"};
+	bk[0]=x0-BX/2;       bk[1]=y0-2*RX;
+	bk[2]=x0-BX/2;       bk[3]=y0+2*RX;
+	bk[4]=x0-2*RY-RR;   bk[5]=y0+2*RX;
+	bk[6]=x0-2*RY;      bk[7]=y0+2*RX+RR;
+	bk[8]=x0-2*RY;      bk[9]=y0+BY/2+BYO-BYO1;
+  bk[10]=x0+2*RY;      bk[11]=y0+BY/2+BYO-BYO1;
+	bk[12]=x0+2*RY;      bk[13]=y0+2*RX+RR;
+	bk[14]=x0+2*RY+RR;   bk[15]=y0+2*RX;
+	bk[16]=x0+BX/2;      bk[17]=y0+2*RX;
+	bk[18]=x0+BX/2;      bk[19]=y0-2*RX;	
+	
+  g1[0]=0;       g1[1]=0;
+  g1[2]=bk[0];   g1[3]=bk[1];
+  g1[4]=bk[18];  g1[5]=bk[19];
+  g1[6]=BX;      g1[7]=0;
+	
+	g2[0]=bk[2];   g2[1]=bk[3];
+	g2[2]=bk[4];   g2[3]=bk[5];
+	g2[4]=bk[6];   g2[5]=bk[7];
+	g2[6]=bk[8];   g2[7]=bk[9];
+	g2[8]=0;       g2[9]=BY-2;
+	
+	g3[0]=bk[10];  g3[1]=bk[11];
+	g3[2]=bk[12];  g3[3]=bk[13];
+	g3[4]=bk[14];  g3[5]=bk[15];
+	g3[6]=bk[16];  g3[7]=bk[17];
+	g3[8]=BX;      g3[9]=BY-2;
+	
+	//setbkcolor(BLACK);                    //画四周绿地，如果bar的话会闪
+	setfillstyle(1,DARKGRAY);
+	setcolor(BLACK);
+	fillpoly(4,g1);
+	fillpoly(5,g2);
+	fillpoly(5,g3);
+	//画按钮
+  draw_play(BXO-3*RY-FW-10,BY-FH-20,1);
+  draw_replay(BXO+3*RY+10,BY-FH-20,0);
+  draw_bt(&bt_back,YELLOW,16);
+  draw_bt(&bt_exit,YELLOW,12);
+  //写说明
+  word_write(20+16*2+32,15,"  《操作说明》",BLACK,16);
+  word_write(20+32,35,"1、“空格”为播放/暂停键",RED,12);
+  word_write(20+32,50,"2、“R”为重播键",WHITE,12);
+  word_write(20+32,65,"3、“Backspace”返回上一界面",BLUE,12);
+  word_write(20+32,80,"4、“ESC”为退出键",YELLOW,12);
+  //画边框
+  setcolor(BLACK);
+  rectangle(20+32-3,15-3,246+32+3,80+16+2);
+  rectangle(20+32-4,15-4,246+32+4,80+16+3);
+  //计时
+  draw_time(count,tm);
+  draw_3g(g);
+  draw_eswn(BX-170,57);
+}
+
+
+/*画十字路面的函数（交通仿真运行模块的工具函数）*/
+void draw_road_s()		//赋给左上角点
+{
+	int x0=BXO,y0=BYO;
+	int ie,iw,is,in;
+	int bk[32];
+	//路面各点初始化
+	bk[0]=x0-3*RY;       bk[1]=y0-BY/2;
+	bk[2]=x0-3*RY;       bk[3]=y0-3*RX-RR;
+	bk[4]=x0-3*RY-RR;    bk[5]=y0-3*RX;
+	bk[6]=x0-BX/2;       bk[7]=y0-3*RX;
+	bk[8]=x0-BX/2;       bk[9]=y0+3*RX;
+	bk[10]=x0-3*RY-RR;   bk[11]=y0+3*RX;
+	bk[12]=x0-3*RY;      bk[13]=y0+3*RX+RR;
+	bk[14]=x0-3*RY;      bk[15]=y0+BY/2;
+  bk[16]=x0+3*RY;      bk[17]=y0+BY/2;
+	bk[18]=x0+3*RY;      bk[19]=y0+3*RX+RR;
+	bk[20]=x0+3*RY+RR;   bk[21]=y0+3*RX;
+	bk[22]=x0+BX/2;      bk[23]=y0+3*RX;
+	bk[24]=x0+BX/2;      bk[25]=y0-3*RX;
+	bk[26]=x0+3*RY+RR;   bk[27]=y0-3*RX;
+	bk[28]=x0+3*RY;      bk[29]=y0-3*RX-RR;
+	bk[30]=x0+3*RY;      bk[31]=y0-BY/2;				
+	
+	setfillstyle(1,BLACK);                      //画十字路
+	setcolor(BLACK);
+	fillpoly(16,bk);
+
+	setcolor(WHITE);
+	setlinestyle(DOTTED_LINE,0,NORM_WIDTH);		//画路分界的虚线
+	for( ie=0;ie<2;ie++)
+		line(x0+3*RY+RR,y0-2*RX+RX*ie,x0+BX/2,y0-2*RX+RX*ie);
+	for( iw=0;iw<2;iw++)
+		line(x0-3*RY-RR,y0+2*RX-RX*iw,x0-BX/2,y0+2*RX-RX*iw);
+	for( in=0;in<2;in++)
+		line(x0-2*RY+RY*in,y0-3*RX-RR,x0-2*RY+RY*in,y0-BY/2);
+	for( is=0;is<2;is++)
+		line(x0+2*RY-RY*is,y0+3*RX+RR,x0+2*RY-RY*is,y0+BY/2);
+
+	setcolor(YELLOW);
+	setlinestyle(SOLID_LINE,0,NORM_WIDTH);		//画路中央的分界线
+
+	line(x0+3*RY+RR,y0,x0+BX/2,y0);
+	line(x0-3*RY-RR,y0,x0-BX/2,y0);
+	line(x0,y0-3*RX-RR,x0,y0-BY/2);
+	line(x0,y0+3*RX+RR,x0,y0+BY/2);
+
+	line(x0+3*RY+RR,y0-3*RX,x0+3*RY+RR,y0);         //画路口停车线
+	line(x0-3*RY-RR,y0+3*RY,x0-3*RY-RR,y0);
+	line(x0-3*RY,y0-3*RX-RR,x0,y0-3*RX-RR);
+	line(x0+3*RY,y0+3*RX+RR,x0,y0+3*RX+RR);
+
+	setcolor(WHITE);                                  //画路中央方形
+	rectangle(x0-3*RY,y0-3*RX,x0+3*RY,y0+3*RX);
+	line(x0-3*RY,y0-3*RX,x0+3*RY,y0+3*RX);
+	line(x0+3*RY,y0-3*RX,x0-3*RY,y0+3*RX);
+	
+	
+}
+
+/*画丁字路面的函数（交通仿真运行模块的工具函数）*/
+void draw_road_d()		//赋给左上角点
+{
+	int x0=BXO1,y0=BYO1;
+	int ie,iw,is,in;
+	int bk[20];
+	//路面各点初始化
+	bk[0]=x0-BX/2;       bk[1]=y0-2*RX;
+	bk[2]=x0-BX/2;       bk[3]=y0+2*RX;
+	bk[4]=x0-2*RY-RR;   bk[5]=y0+2*RX;
+	bk[6]=x0-2*RY;      bk[7]=y0+2*RX+RR;
+	bk[8]=x0-2*RY;      bk[9]=y0+BY/2+BYO-BYO1;
+  bk[10]=x0+2*RY;      bk[11]=y0+BY/2+BYO-BYO1;
+	bk[12]=x0+2*RY;      bk[13]=y0+2*RX+RR;
+	bk[14]=x0+2*RY+RR;   bk[15]=y0+2*RX;
+	bk[16]=x0+BX/2;      bk[17]=y0+2*RX;
+	bk[18]=x0+BX/2;      bk[19]=y0-2*RX;				
+	
+	setfillstyle(1,BLACK);                      //画十字路
+	setcolor(BLACK);
+	fillpoly(10,bk);
+
+	setcolor(WHITE);
+	setlinestyle(DOTTED_LINE,0,NORM_WIDTH);		//画路分界的虚线
+		line(x0+2*RY+RR,y0-RX,x0+BX/2,y0-RX);   //东路
+		line(x0-2*RY-RR,y0+RX,x0-BX/2,y0+RX);   //西路
+		line(x0+RY,y0+2*RX+RR,x0+RY,y0+BY/2+BYO-BYO1);   //南路
+
+	setcolor(YELLOW);
+	setlinestyle(SOLID_LINE,0,NORM_WIDTH);		//画路中央的分界线
+
+	line(x0+2*RY+RR,y0,x0+BX/2,y0);          //e
+	line(x0-2*RY-RR,y0,x0-BX/2,y0);          //w
+	line(x0,y0+2*RX+RR,x0,y0+BY/2+BYO-BYO1);          //s
+
+	line(x0+2*RY+RR,y0-2*RX,x0+2*RY+RR,y0);         //画路口停车线
+	line(x0-2*RY-RR,y0+2*RY,x0-2*RY-RR,y0);
+	line(x0+2*RY,y0+2*RX+RR,x0,y0+2*RX+RR);	
+}
+
+
+
+
+/*画交通灯的框架的函数（被draw_lamp函数调用）*/
+void lamp_frame_s(int x,int y,int flag,int color,int w,int h)
+{
+
+	int fn[8],fe[8],fs[8],fw[8];
+
+        //fn指北路灯的背景框架
+        fn[0]=x;      fn[1]=y;
+        fn[2]=x-3*w;  fn[3]=y;
+        fn[4]=x-3*w;  fn[5]=y+h;
+        fn[6]=x;      fn[7]=y+h;	
+	
+        //东路灯框架
+        fe[0]=x;      fe[1]=y;
+        fe[2]=x;      fe[3]=y-3*w;
+        fe[4]=x-h;    fe[5]=y-3*w;
+        fe[6]=x-h;    fe[7]=y;
+
+        //南路灯框架
+        fs[0]=x;      fs[1]=y;
+        fs[2]=x+3*w;  fs[3]=y;
+        fs[4]=x+3*w;  fs[5]=y-h;
+        fs[6]=x;      fs[7]=y-h;
+
+        //西路灯框架
+        fw[0]=x;      fw[1]=y;
+        fw[2]=x;      fw[3]=y+3*w;
+        fw[4]=x+h;    fw[5]=y+3*w;
+        fw[6]=x+h;    fw[7]=y;
+
+
+	setlinestyle(SOLID_LINE,0,NORM_WIDTH);
+	setcolor(BLUE);		               //框架外轮廓颜色
+	setfillstyle(1,color);		       //color为背景颜色，由image函数取定
+	switch(flag)
+	{
+		case 1:
+			fillpoly(4,fe);		//画东路灯框的内部粗框条
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);		//内部框条颜色
+			line(x,y-w,x-h,y-w);
+			line(x,y-2*w,x-h,y-2*w);
+			break;
+		case 2:
+			fillpoly(4,fs);
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);
+			line(x+w,y,x+w,y-h);
+			line(x+2*w,y,x+2*w,y-h);
+			break;
+		case 3:
+			fillpoly(4,fw);
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);
+			line(x,y+w,x+h,y+w);
+			line(x,y+2*w,x+h,y+2*w);
+			break;
+		case 4:
+			fillpoly(4,fn);
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);
+			line(x-w,y,x-w,y+h);
+			line(x-2*w,y,x-2*w,y+h);
+			break;
+		default :   break;
+	}
+
+}
+
+/*画丁字交通灯的框架的函数（被draw_lamp函数调用）*/
+void lamp_frame_d(int x,int y,int flag,int color,int w,int h)
+{
+
+	int fn[8],fe[8],fw[8];
+
+        //fn指北路灯的背景框架
+        fn[0]=x;      fn[1]=y;
+        fn[2]=x-2*w;  fn[3]=y;
+        fn[4]=x-2*w;  fn[5]=y+h;
+        fn[6]=x;      fn[7]=y+h;	
+	
+        //东路灯框架
+        fe[0]=x;      fe[1]=y;
+        fe[2]=x;      fe[3]=y-2*w;
+        fe[4]=x-h;    fe[5]=y-2*w;
+        fe[6]=x-h;    fe[7]=y;
+
+        //西路灯框架
+        fw[0]=x;      fw[1]=y;
+        fw[2]=x;      fw[3]=y+2*w;
+        fw[4]=x+h;    fw[5]=y+2*w;
+        fw[6]=x+h;    fw[7]=y;
+
+
+	setlinestyle(SOLID_LINE,0,NORM_WIDTH);
+	setcolor(BLUE);		               //框架外轮廓颜色
+	setfillstyle(1,color);		       //color为背景颜色，由image函数取定
+	switch(flag)
+	{
+		case 1:
+			fillpoly(4,fe);		//画东路灯框的内部粗框条
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);		//内部框条颜色
+			line(x,y-w,x-h,y-w);
+			break;
+		case 3:
+			fillpoly(4,fw);
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);
+			line(x,y+w,x+h,y+w);
+			break;
+		case 4:
+			fillpoly(4,fn);
+			setlinestyle(SOLID_LINE,0,THICK_WIDTH);
+			setcolor(BLUE);
+			line(x-w,y,x-w,y+h);
+			break;
+		default :   
+			break;
+	}
+
+}
+
+
+/*画交通灯的箭头灯的函数（被draw_lamp函数调用）*/
+void lamp_arrow(int x,int y,int flag,int color,float rate)
+{
+        
+        //x,y为箭头中心坐标
+
+	//指向东的箭头轮廓       箭头的长度为   18*rate长
+        int ae[14],as[14],aw[14],an[14];
+        ae[0]=x+9*rate;   ae[1]=y;
+        ae[2]=x;          ae[3]=y-6*rate;
+        ae[4]=x;          ae[5]=y-2*rate;
+        ae[6]=x-9*rate;   ae[7]=y-2*rate;
+        ae[8]=x-9*rate;   ae[9]=y+2*rate;
+        ae[10]=x;         ae[11]=y+2*rate;
+        ae[12]=x;         ae[13]=y+6*rate;	
+
+        //指向南的箭头轮廓
+        as[0]=x;          as[1]=y+9*rate;
+        as[2]=x-6*rate;   as[3]=y;
+        as[4]=x-2*rate;   as[5]=y;
+        as[6]=x-2*rate;   as[7]=y-9*rate;
+        as[8]=x+2*rate;   as[9]=y-9*rate;
+        as[10]=x+2*rate;  as[11]=y;
+        as[12]=x+6*rate;  as[13]=y;
+
+	//指向西的箭头轮廓
+        aw[0]=x-9*rate;   aw[1]=y;
+        aw[2]=x;          aw[3]=y-6*rate;
+        aw[4]=x;          aw[5]=y-2*rate;
+        aw[6]=x+9*rate;   aw[7]=y-2*rate;
+        aw[8]=x+9*rate;   aw[9]=y+2*rate;
+        aw[10]=x;         aw[11]=y+2*rate;
+        aw[12]=x;         aw[13]=y+6*rate;
+
+	//指向北的箭头轮廓
+        an[0]=x;          an[1]=y-9*rate;
+        an[2]=x-6*rate;   an[3]=y;
+        an[4]=x-2*rate;   an[5]=y;
+        an[6]=x-2*rate;   an[7]=y+9*rate;
+        an[8]=x+2*rate;   an[9]=y+9*rate;
+        an[10]=x+2*rate;  an[11]=y;
+        an[12]=x+6*rate;  an[13]=y;
+
+
+	setlinestyle(SOLID_LINE,0,NORM_WIDTH);
+	setcolor(BLACK);	               //箭头边缘颜色
+	setfillstyle(1,color);
+	switch(flag)
+	{
+		case 1:
+			fillpoly(7,ae);		//画指向东的箭头
+			break;
+		case 2:
+			fillpoly(7,as);         //画指向南的箭头
+			break;
+		case 3:
+			fillpoly(7,aw);         //画指向西的箭头
+			break;
+		case 4:
+			fillpoly(7,an);         //画指向北的箭头
+			break;
+		default:
+			break;
+	}
+
+}
+
+/*画交通灯的函数（交通仿真运行模块的工具函数）*/
+void draw_lamp_s(struct LAMP * pl)
+{
+	int h=H,w=W;	  //框格宽w和高h的设定
+	float rate=1;	  //箭头尺寸比率
+	int x0=pl->x,y0=pl->y;		//确定参考点
+	int c1=pl->lc,c2=pl->sc,c3=pl->rc;		//左中右三个灯的颜色
+	int f=pl->flag;			//标志符号指示是用于哪一个路口的灯
+	int color=BLACK;		//交通灯背景色
+	lamp_frame_s(x0,y0,f,color,w,h);		//画灯框和灯背景
+	switch(f)
+	{
+                //均从远离参考点的灯开始画
+		case 1:		//画东路交通灯
+			lamp_arrow(x0-h/2,y0-5*w/2,4,c1,rate);	//c1代表是左转箭头，4代表箭头向北，以下依次类推
+			lamp_arrow(x0-h/2,y0-3*w/2,1,c2,rate);
+			lamp_arrow(x0-h/2,y0-w/2,2,c3,rate);
+			break;
+		case 2:		//画南路交通灯
+			lamp_arrow(x0+5*w/2,y0-h/2,1,c1,rate);
+			lamp_arrow(x0+3*w/2,y0-h/2,2,c2,rate);
+			lamp_arrow(x0+w/2,y0-h/2,3,c3,rate);
+			break;
+		case 3:		//画西路交通灯
+			lamp_arrow(x0+h/2,y0+5*w/2,2,c1,rate);
+			lamp_arrow(x0+h/2,y0+3*w/2,3,c2,rate);
+			lamp_arrow(x0+h/2,y0+w/2,4,c3,rate);
+			break;
+		case 4:		//画北路交通灯
+			lamp_arrow(x0-5*w/2,y0+h/2,3,c1,rate);
+			lamp_arrow(x0-3*w/2,y0+h/2,4,c2,rate);
+			lamp_arrow(x0-w/2,y0+h/2,1,c3,rate);
+			break;
+		default : break;
+	}
+}
+
+/*画交通灯的函数（交通仿真运行模块的工具函数）*/
+void draw_lamp_d(struct LAMP * pl)
+{
+	int h=H,w=W;	  //框格宽w和高h的设定
+	float rate=1;	  //箭头尺寸比率
+	int x0=pl->x,y0=pl->y;		//确定参考点
+	int c1=pl->lc,c2=pl->sc,c3=pl->rc;		//左中右三个灯的颜色
+	int f=pl->flag;			//标志符号指示是用于哪一个路口的灯
+	int color=BLACK;		//交通灯背景色
+	lamp_frame_d(x0,y0,f,color,w,h);		//画灯框和灯背景
+	switch(f)
+	{
+                //均从远离参考点的灯开始画
+		case 1:		//画东路交通灯
+			lamp_arrow(x0-h/2,y0-3*w/2,1,c2,rate);	//1代表是左转箭头，4代表箭头向北，以下依次类推
+			lamp_arrow(x0-h/2,y0-w/2,2,c3,rate);
+			break;
+		case 3:		//画西路交通灯
+			lamp_arrow(x0+h/2,y0+3*w/2,2,c1,rate);
+			lamp_arrow(x0+h/2,y0+w/2,3,c2,rate);
+			break;
+		case 4:		//画北路交通灯
+			lamp_arrow(x0-3*w/2,y0+h/2,3,c1,rate);
+			lamp_arrow(x0-w/2,y0+h/2,1,c3,rate);
+			break;
+		default : 
+			break;
+	}
+}
+
+/*****画车的函数******/
+void draw_car(struct CAR * p)
+{
+	int i;
+	int x=p->x,y=p->y;
+	int color=p->color;
+	double a=p->angle;
+	int tou[16],wei[16],ch[8],ding[8],d1[6],d2[6],d3[6],d4[6];
+		//车头
+		tou[0]=x+A*8.6*cos(54.5*P/180+a);     tou[1]=y-A*8.6*sin(54.5*P/180+a);
+		tou[2]=x+A*10.3*cos(60.9*P/180+a);    tou[3]=y-A*10.3*sin(60.9*P/180+a);
+		tou[4]=x+A*9.49*cos(71.5*P/180+a);    tou[5]=y-A*9.49*sin(71.5*P/180+a);
+		tou[6]=x+A*12.37*cos(75.95*P/180+a);  tou[7]=y-A*12.37*sin(75.95*P/180+a);
+		tou[8]=x-A*12.37*cos(75.95*P/180-a);  tou[9]=y-A*12.37*sin(75.95*P/180-a);
+		tou[10]=x-A*9.49*cos(71.5*P/180-a);   tou[11]=y-A*9.49*sin(71.5*P/180-a);
+		tou[12]=x-A*10.3*cos(60.9*P/180-a);   tou[13]=y-A*10.3*sin(60.9*P/180-a);
+		tou[14]=x-A*8.6*cos(54.5*P/180-a);    tou[15]=y-A*8.6*sin(54.5*P/180-a);
+
+		//车尾
+		wei[0]=x+A*11.18*cos(63.44*P/180-a);    wei[1]=y+A*11.18*sin(63.44*P/180-a);
+		wei[2]=x+A*12.08*cos(65.556*P/180-a);   wei[3]=y+A*12.08*sin(65.556*P/180-a);
+		wei[4]=x+A*11.4*cos(74.777*P/180-a);    wei[5]=y+A*11.4*sin(74.777*P/180-a);
+		wei[6]=x+A*13.34*cos(77.036*P/180-a);   wei[7]=y+A*13.34*sin(77.036*P/180-a);
+		wei[8]=x-A*13.34*cos(77.036*P/180+a);   wei[9]=y+A*13.34*sin(77.036*P/180+a);
+		wei[10]=x-A*11.4*cos(74.777*P/180+a);   wei[11]=y+A*11.4*sin(74.777*P/180+a);
+		wei[12]=x-A*12.08*cos(65.556*P/180+a);  wei[13]=y+A*12.08*sin(65.556*P/180+a);
+		wei[14]=x-A*11.18*cos(63.44*P/180+a);   wei[15]=y+A*11.18*sin(63.44*P/180+a);
+
+	//车窗矩形
+		ch[0]=x+A*8.6*cos(54.5*P/180+a);       ch[1]=y-A*8.6*sin(54.5*P/180+a);
+		ch[2]=x-A*8.6*cos(54.5*P/180-a);       ch[3]=y-A*8.6*sin(54.5*P/180-a);
+		ch[4]=x-A*11.18*cos(63.44*P/180+a);    ch[5]=y+A*11.18*sin(63.44*P/180+a);
+		ch[6]=x+A*11.18*cos(63.44*P/180-a);    ch[7]=y+A*11.18*sin(63.44*P/180-a);
+
+	//车顶矩形
+		ding[0]=x+A*3.606*cos(33.69*P/180+a);   ding[1]=y-A*3.606*sin(33.69*P/180+a);
+		ding[2]=x-A*3.606*cos(33.69*P/180-a);   ding[3]=y-A*3.606*sin(33.69*P/180-a);
+		ding[4]=x-A*8.544*cos(69.444*P/180+a);  ding[5]=y+A*8.544*sin(69.444*P/180+a);
+		ding[6]=x+A*8.544*cos(69.444*P/180-a);  ding[7]=y+A*8.544*sin(69.444*P/180-a);
+
+		//前车灯三角形
+		d1[0]=x+A*10.3*cos(60.9*P/180+a);       d1[1]=y-A*10.3*sin(60.9*P/180+a);
+		d1[2]=x+A*9.49*cos(71.5*P/180+a);       d1[3]=y-A*9.49*sin(71.5*P/180+a);
+		d1[4]=x+A*12.37*cos(75.95*P/180+a);     d1[5]=y-A*12.37*sin(75.95*P/180+a);
+
+	//前车灯三角形
+		d2[0]=x-A*12.37*cos(75.95*P/180-a);     d2[1]=y-A*12.37*sin(75.95*P/180-a);
+		d2[2]=x-A*9.49*cos(71.5*P/180-a);       d2[3]=y-A*9.49*sin(71.5*P/180-a);
+		d2[4]=x-A*10.3*cos(60.9*P/180-a);       d2[5]=y-A*10.3*sin(60.9*P/180-a);
+
+		//后车灯三角形
+		d3[0]=x+A*12.08*cos(65.556*P/180-a);    d3[1]=y+A*12.08*sin(65.556*P/180-a);
+		d3[2]=x+A*11.4*cos(74.777*P/180-a);     d3[3]=y+A*11.4*sin(74.777*P/180-a);
+		d3[4]=x+A*13.34*cos(77.036*P/180-a);    d3[5]=y+A*13.34*sin(77.036*P/180-a);
+
+		//后车灯三角形
+		d4[0]=x-A*13.34*cos(77.036*P/180+a);    d4[1]=y+A*13.34*sin(77.036*P/180+a);
+		d4[2]=x-A*11.4*cos(74.777*P/180+a);     d4[3]=y+A*11.4*sin(74.777*P/180+a);
+		d4[4]=x-A*12.08*cos(65.556*P/180+a);    d4[5]=y+A*12.08*sin(65.556*P/180+a);
+
+	setlinestyle(SOLID_LINE,0,NORM_WIDTH);
+	setcolor(color);
+	setfillstyle(1,WHITE);		//画车灯
+	fillpoly(3,d1);
+	fillpoly(3,d2);
+	fillpoly(3,d3);
+	fillpoly(3,d4);
+	setfillstyle(1,LIGHTBLUE);	//画车窗
+	fillpoly(4,ch);
+	setfillstyle(1,color);		//画车顶，车头和车尾，车顶必须在车窗之后画
+	fillpoly(4,ding);
+	fillpoly(8,tou);
+	fillpoly(8,wei);
+	
+	//在车窗上画几条轮廓线，把车窗分为四个
+	line(x+A*3.606*cos(33.69*P/180+a),y-A*3.606*sin(33.69*P/180+a),
+	          x+A*8.6*cos(54.5*P/180+a),y-A*8.6*sin(54.5*P/180+a));
+	          
+	line(x-A*3.606*cos(33.69*P/180-a),y-A*3.606*sin(33.69*P/180-a),
+	          x-A*8.6*cos(54.5*P/180-a),y-A*8.6*sin(54.5*P/180-a));
+	          
+	line(x+A*4.243*cos(45*P/180-a),y+A*4.243*sin(45*P/180-a),
+	          x+A*5.83*cos(30.97*P/180-a),y+A*5.83*sin(30.97*P/180-a));
+	          
+	line(x-A*4.243*cos(45*P/180+a),y+A*4.243*sin(45*P/180+a),
+	          x-A*5.83*cos(30.97*P/180+a),y+A*5.83*sin(30.97*P/180+a));
+	          
+	line(x+A*8.544*cos(69.444*P/180-a),y+A*8.544*sin(69.444*P/180-a),
+	          x+A*11.18*cos(63.44*P/180-a),y+A*11.18*sin(63.44*P/180-a));
+	          
+	line(x-A*8.544*cos(69.444*P/180+a),y+A*8.544*sin(69.444*P/180+a),
+	          x-A*11.18*cos(63.44*P/180+a),y+A*11.18*sin(63.44*P/180+a));
+	
+}
+
+/*****画仿真界面下播放/暂停按钮****/
+void draw_play(int x,int y,int state)
+{
+	int tr[6];
+	tr[0]=x+FW/4;  tr[1]=y+FH/5;
+	tr[2]=x+FW/4;  tr[3]=y+4*FH/5;
+	tr[4]=x+3*FW/4; tr[5]=y+FH/2;
+
+	if(state==0)
+		{
+			setfillstyle(1,LIGHTGRAY);
+	    bar(x,y,x+FW,y+FH);
+			setcolor(WHITE);
+			line(x,y,x+FW,y);
+			line(x,y,x,y+FH);
+			setcolor(BLACK);
+			line(x,y+FH,x+FW,y+FH);
+			line(x+FW,y,x+FW,y+FH);
+			setfillstyle(1,BLACK);
+			fillpoly(3,tr);
+			setcolor(WHITE);
+			line(tr[0],tr[1],tr[2],tr[3]);
+			line(tr[0],tr[1],tr[4],tr[5]);
+			setcolor(BLACK);
+			line(tr[4],tr[5],tr[2],tr[3]);
+		}
+	if(state==1)
+		{
+			setfillstyle(1,LIGHTGRAY);
+	    bar(x,y,x+FW,y+FH);
+			setcolor(BLACK);
+			line(x,y,x+FW,y);
+			line(x,y,x,y+FH);
+			setcolor(WHITE);
+			line(x,y+FH,x+FW,y+FH);
+			line(x+FW,y,x+FW,y+FH);		
+			setfillstyle(1,BLACK);
+			bar(x+FW/5,y+FH/4,x+2*FW/5,y+3*FH/4);
+			bar(x+3*FW/5,y+FH/4,x+4*FW/5,y+3*FH/4);
+			setcolor(WHITE);
+			line(x+FW/5,y+FH/4,x+2*FW/5,y+FH/4);
+			line(x+FW/5,y+FH/4,x+FW/5,y+3*FH/4);
+			line(x+3*FW/5,y+FH/4,x+3*FW/5,y+FH/4);
+			line(x+3*FW/5,y+FH/4,x+3*FW/5,y+3*FH/4);
+			setcolor(BLACK);
+			line(x+FW/5,y+3*FH/4,x+2*FW/5,y+3*FH/4);
+			line(x+2*FW/5,y+FH/4,x+2*FW/5,y+3*FH/4);
+			line(x+3*FW/5,y+3*FH/4,x+4*FW/5,y+3*FH/4);
+			line(x+4*FW/5,y+FH/4,x+4*FW/5,y+3*FH/4);				
+		}
+}
+
+/*********画仿真界面下重播按钮***********/
+void draw_replay(int x,int y,int state)
+{
+	setfillstyle(1,LIGHTGRAY);
+	bar(x,y,x+FW,y+FH);
+	if(state==0)
+	{
+		setcolor(WHITE);
+		line(x,y,x+FW,y);
+		line(x,y,x,y+FH);
+		setcolor(BLACK);
+		line(x,y+FH,x+FW,y+FH);
+		line(x+FW,y,x+FW,y+FH);
+		setfillstyle(1,BLACK);
+		bar(x+FW/4,y+FH/4,x+3*FW/4,y+3*FH/4);
+	}
+	if(state==1)
+	{
+		setcolor(BLACK);
+		line(x,y,x+FW,y);
+		line(x,y,x,y+FH);
+		setcolor(WHITE);
+		line(x,y+FH,x+FW,y+FH);
+		line(x+FW,y,x+FW,y+FH);
+		setfillstyle(1,BLACK);
+		bar(x+FW/4,y+FH/4,x+3*FW/4,y+3*FH/4);
+	}
+}
+
+/*******画仿真界面下分析按钮********/
+void draw_fenxi()
+{
+	word_write(BX-16*7-10-20,BY-FH-20,"分析ENTER",YELLOW,16);
+	setcolor(WHITE);
+	line(BX-16*7-10-BTDX-20,BY-FH-20-BTDY,BX-10+BTDX-20,BY-FH-20-BTDY);
+	line(BX-16*7-10-BTDX-20,BY-FH-20-BTDY,BX-16*7-10-BTDX-20,BY-FH-5+BTDY);
+	setcolor(BLACK);
+	line(BX-10+BTDX-20,BY-FH-20-BTDY,BX-10+BTDX-20,BY-FH-5+BTDY);
+	line(BX-16*7-10-BTDX-20,BY-FH-5+BTDY,BX-10+BTDX-20,BY-FH-5+BTDY);
+}

@@ -1,0 +1,770 @@
+***********************************************************
+*                   *本文件功能：十字口车辆控制            *
+*                   *作者：国悦婷                          *
+*                   *最终修改时间：2011.11.4               *
+************************************************************/
+
+#include <math.h>
+#include <stdio.h>
+#include <graphics.h>
+#include "all.h"
+#include "car_s.h"
+
+
+/*处理前方报警的函数(共用)*/
+void do_alarm(struct CAR *p)
+{
+    if(p->alarm==1)//如果在最短距离内，有警报
+    {
+        p->speed=0;//停车
+    }
+    else if(p->alarm==2)//如果在中距内
+    {
+        p->speed=1*RATE;   //置为慢速
+    }
+    else if(p->alarm==0)//没有警报
+    {
+        p->speed=p->std_speed;//置为初始化的速度
+    }
+}
+
+//转弯前的直道扫描函数（共用）
+void pre_scan(struct CAR pa[],int n,struct CAR *p)
+{
+    //pa指向整个数组的首地址，p则指向当前的车辆
+    int i;
+    for(i=0;i<n;i++,pa++)
+    {
+        if(pa->justment==p->justment)  //&&(pa->flag==p->flag))//???????
+        {
+            switch(p->justment)
+            {
+ 	         //如果警戒范围内有车，则警报置为1
+                case 10:
+                case 11:
+                case 12:
+                        if( (pa->x < p->x)&&((pa->x+DIS) > p->x) )
+                            p->alarm=1;
+                        else if(  ((pa->x+DIS) < p->x)&&((pa->x+DIL) >p->x  ))
+                            p->alarm=2;
+                        else if( (pa->x+DIL) < p->x )              
+                            p->alarm=0;//将距离梯度化，在最短距离内停车，中距内慢速行驶，长距内以初始化速度行驶
+			break;
+
+	        case 20:
+	        case 21:	
+	        case 22:
+			if( (pa->y < p->y)&&((pa->y+DIS) > p->y) )
+			    p->alarm=1;
+                        else if( ((pa->y+DIS) < p->y )&&((pa->y+DIL) >p->y  ))
+                            p->alarm=2;
+			else if( (pa->y+DIL) < p->y )    
+                            p->alarm=0;
+			break;
+
+	        case 30:
+	        case 31:	
+	        case 32:
+			if(  (pa->x > p->x) && ( (pa->x-DIS) < p->x ) )
+			    p->alarm=1;
+                        else if(  ((pa->x-DIS) > p->x) && ((pa->x-DIL) < p->x) )
+                            p->alarm=2;
+			else if(  (pa->x-DIL) > p->x)      
+                            p->alarm=0;
+			break;
+
+	        case 40:
+	        case 41:	
+	        case 42:
+			if( (pa->y > p->y) &&((pa->y-DIS)< p->y) )
+			    p->alarm=1;
+                        else if( ((pa->y-DIS) > p->y)&&((pa->y-DIL) < p->y  ))
+                            p->alarm=2;
+			else if( (pa->y-DIL) > p->y)       
+                            p->alarm=0;
+			break;
+             }
+         }
+     }
+}
+
+//转弯后的直道扫描函数（共用）
+void ex_scan(struct CAR *pa,int n,struct CAR *p)
+{
+    //pa指向整个数组的首地址，p则指向当前的车辆
+    //int d=ALARMDIS*5/4;//d为警戒距离
+    int i;
+    for(i=0;i<n;i++,pa++)
+    {
+         if(pa->justment==p->justment)               //&&(pa->flag==p->flag))
+         {
+	      switch(p->justment)
+             {
+ 	         //如果警戒范围内有车，则警报置为1
+                 //转到北路的车
+	        case 10:
+	        case 21:
+	        case 32:
+			if( (pa->y < p->y) &&((pa->y+DIS)>= p->y) )
+			    p->alarm=1;
+                        else if( ((pa->y+DIS) < p->y)&&( (pa->y+DIL) >= p->y  ))
+                            p->alarm=2;
+			else if( (pa->y+DIL) < p->y)        
+                            p->alarm=0;
+			break;
+            
+                //转到西路的车
+	        case 11:
+	        case 22:	
+	        case 40:
+			if(  (pa->x < p->x) && ( (pa->x+DIS) >= p->x ) )
+			    p->alarm=1;
+                        else if(  ((pa->x+DIS) < p->x) && ((pa->x+DIL) >= p->x) )
+                            p->alarm=2;
+			else if(  (pa->x+DIL) < p->x)     
+                            p->alarm=0;
+			break;
+
+                //转到南路的车
+	        case 12:
+	        case 30:	
+	        case 41:
+			if( (pa->y > p->y)&&((pa->y-DIS) <= p->y) )
+			    p->alarm=1;
+                        else if( ((pa->y-DIS) > p->y )&&((pa->y-DIL) <=p->y  ))
+                            p->alarm=2;
+			else if( (pa->y-DIL) > p->y )   
+                            p->alarm=0;
+			break;
+
+                //转到东路的车
+	        case 20:
+	        case 31:	
+	        case 42:
+			if( (pa->x > p->x)&&((pa->x-DIS) <= p->x) )
+			    p->alarm=1;
+                        else if(  ((pa->x-DIS) > p->x)&&((pa->x-DIL) <= p->x  ))
+                            p->alarm=2;
+			else if( (pa->x-DIL) > p->x )             
+                            p->alarm=0;
+			break;
+             }
+         }
+     }
+}
+
+/*****************************************************
+*函数名：void do_straight_s                          *
+*功能：十字口控制车辆直行的函数                       *
+*参数：*pcar车辆首地址，*p当前车地址，*pl交通灯首指针  *
+*注：被control_single_car_s调用                      *
+******************************************************/
+void do_straight_s(struct CAR *pcar,int n,struct CAR *p,struct LAMP *pl)
+{
+    int i=0;                  //pcar指向整个数组的首地址，p则指向当前的车辆
+    struct CAR *pa=pcar;
+    int stopx[2]={BXO-3*RY-RR-D,BXO+3*RY+RR+D};    //西东向停车线
+    int stopy[2]={BYO-3*RX-RR-D,BYO+3*RX+RR+D};    //北南向停车线
+    int limit_rx[6],limit_ry[6];
+
+    for (i=0;i<6;i++)                             //初始化限定数组
+    {
+        limit_rx[i]=BXO-(5*RY/2)+RY*i;
+        limit_ry[i]=BYO-(5*RX/2)+RX*i;
+    }
+
+    switch(p->justment)
+    {
+        case 11:
+                if((pl+2)->sc==LIGHTGREEN)//绿灯可以通行的情况下
+                {
+                    pre_scan(pa,n,p);   //扫描前方路况信息
+                    do_alarm(p);        //境界判断
+                    p->y=limit_ry[1];   //东道右向应该位于11道
+                    p->x -= (p->speed); //步进，以即时速率大小为步进长度
+                }
+                else  
+                {
+                    if((p->x > stopx[1])&&(p->x < (stopx[1]+W)))   //在停车线的邻域内
+                    {
+                        p->speed=0;
+                        p->y=limit_ry[1];          //东道右向应该位于11道
+                        p->x -= (p->speed);        //步进完成直线行驶，以即时速率大小为步进单位长度
+                    }
+                    else                          //过了停车线
+                    {
+                        pre_scan(pa,n,p);
+                        do_alarm(p);
+                        p->y=limit_ry[1];
+                        p->x -= (p->speed);
+                    }
+                }
+                break;
+
+        case 21:
+                if((pl+3)->sc==LIGHTGREEN)     //绿灯可以通行的情况下
+                {
+                    pre_scan(pa,n,p);
+                    do_alarm(p);
+                    p->x=limit_rx[4];
+                    p->y -= (p->speed);
+                }
+                else  
+                {
+                    if((p->y > stopy[1])&&(p->y < (stopy[1]+W)))
+                    {
+                        p->speed=0;
+                        p->x=limit_rx[4];
+                        p->y -= (p->speed);
+                    }
+                    else
+                    {
+                        pre_scan(pa,n,p);
+                        do_alarm(p);
+                        p->x=limit_rx[4];
+                        p->y -= (p->speed);
+                    }
+                }
+                break;
+
+        case 31:
+                if(pl->sc==LIGHTGREEN)//绿灯可以通行的情况下
+                {
+                    pre_scan(pa,n,p);
+                    do_alarm(p);
+                    p->y=limit_ry[4];
+                    p->x += (p->speed);
+                }
+                else 
+                {
+                    if((p->x < stopx[0])&&(p->x > (stopx[0]-W)))
+                    {
+                        p->speed=0;
+                        p->y=limit_ry[4];
+                        p->x += (p->speed);
+                    }
+                    else                     //过了停车线
+                    {
+                        pre_scan(pa,n,p);
+                        do_alarm(p);
+                        p->y=limit_ry[4];
+                        p->x += (p->speed);
+                    }
+                }
+                break;
+
+        case 41:
+                if((pl+1)->sc==LIGHTGREEN)
+                {
+                    pre_scan(pa,n,p);
+                    do_alarm(p);
+                    p->x=limit_rx[1];
+                    p->y += (p->speed);
+                }
+                else              //红灯的情况下
+                {
+                    if((p->y < stopy[0])&&(p->y > (stopy[0]-W)))
+                    {
+                        p->speed=0;
+                        p->x=limit_rx[1];
+                        p->y += (p->speed);
+                    }
+                    else                //过了停车线
+                    {
+                        pre_scan(pa,n,p);
+                        do_alarm(p);
+                        p->x=limit_rx[1];
+                        p->y += (p->speed);
+                    }
+                }                      
+                break;
+    }   
+}
+
+/*****************************************************
+*******函数名：void do_turn_s                        *
+*******功能：十字口控制车辆转弯的函数                 *
+*******参数：*p当前车地址                            *
+*******重要数据：stdx、stdy公转圆心，r1、r2半径       *
+*******注：被do_left_s，do_right_s调用               *
+******************************************************/
+void do_turn_s(struct CAR *p)
+{
+    //stdx,stdy为转弯的圆心，r1,r2为公转半径
+    int i=p->count,sp=p->speed,r1=RR+RY/2+D,r2=RR+7*RY/2+D;  //大小公转半径
+    int stdx[2]={BXO-3*RY-RR-D,BXO+3*RY+RR+D};          //圆心坐标的大小x
+    int stdy[2]={BYO-3*RX-RR-D,BYO+3*RX+RR+D};          //圆心坐标的大小y
+    double t=P/180;
+
+    if((i*t*sp)<P/2)     //count为转过一个弯所需的步数，由1开始累加，sp为一步走的像素数
+    { 
+       p->count++;          
+       i=p->count;
+       switch(p->justment)
+       {
+        case 10:
+ 	        p->x=stdx[1]-r1*sin(i*t*sp);
+	        p->y=stdy[0]+r1*cos(i*t*sp);
+                p->angle -=sp*t;           //p->angle=P/2-i*t*sp;
+	        break;
+        case 12:
+ 	        p->x=stdx[1]-r2*sin(i*t*sp);
+	        p->y=stdy[1]-r2*cos(i*t*sp);
+                p->angle +=sp*t;
+	        break;
+
+        case 20:
+ 	        p->x=stdx[1]-r1*cos(i*t*sp);
+	        p->y=stdy[1]-r1*sin(i*t*sp);
+                p->angle -=sp*t;
+	        break;
+        case 22:
+ 	        p->x=stdx[0]+r2*cos(i*t*sp);
+	        p->y=stdy[1]-r2*sin(i*t*sp);
+                p->angle +=sp*t;
+	        break;
+
+        case 30:
+ 	        p->x=stdx[0]+r1*sin(i*t*sp);
+	        p->y=stdy[1]-r1*cos(i*t*sp);
+                p->angle -=sp*t;
+	        break;
+        case 32:
+ 	        p->x=stdx[0]+r2*sin(i*t*sp);
+	        p->y=stdy[0]+r2*cos(i*t*sp);
+                p->angle +=sp*t;
+	        break;
+
+        case 40:
+ 	        p->x=stdx[0]+r1*cos(i*t*sp);
+	        p->y=stdy[0]+r1*sin(i*t*sp);
+                p->angle -=sp*t;
+	        break;
+        case 42:
+ 	        p->x=stdx[1]-r2*cos(i*t*sp);
+	        p->y=stdy[0]+r2*sin(i*t*sp);
+                p->angle +=sp*t;
+	        break;
+        }
+    }
+}
+    
+/*********************************************************
+*******函数名：void do_left_s                             *
+*******功能：十字口控制车辆左转的函数                      *
+*******参数：*pcar车辆首地址，*p当前车地址，*pl交通灯首指针*                             
+*******注：被control_single_car_s调用                     *
+***********************************************************/
+void do_left_s(struct CAR *pcar,int n,struct CAR *p,struct LAMP *pl)
+{                        //pcar指向整个数组的首地址，p则指向当前的车辆
+    struct CAR *pa=pcar;
+    int i=0;
+    int stopx[2]={BXO-3*RY-RR-D,BXO+3*RY+RR+D};
+    int stopy[2]={BYO-3*RX-RR-D,BYO+3*RX+RR+D};//用于停车判断交通灯的停车线
+    int limit_rx[6],limit_ry[6];
+    for (i=0;i<6;i++)//初始化限定数组
+    {
+       limit_rx[i]=BXO-(5*RY/2)+RY*i;
+       limit_ry[i]=BYO-(5*RX/2)+RX*i;
+    }
+
+    switch(p->justment)
+    {
+        case 12:
+                if((pl+2)->lc==LIGHTGREEN)//左转灯是绿灯，可以通行
+                {    
+                    if(p->x > stopx[1])
+                    {
+		         pre_scan(pa,n,p);//扫描前方路况信息
+			 do_alarm(p);
+                         p->y=limit_ry[2];
+		         p->x -= (p->speed);
+                    }
+                    else if((p->x <=stopx[1])&&(p->y<stopy[1]))      
+                    {    
+                        p->speed=1*RATE;
+                        do_turn_s(p);
+                    }
+                    else if(p->y>=stopy[1])
+                    {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+			 do_alarm(p);
+                         p->x=limit_rx[2];
+		         p->y += (p->speed);
+		         p->angle=P;
+                    }
+                }
+
+                else 
+                {
+                     if((p->x >= stopx[1])&&(p->x < (stopx[1]+W)))//在停车线的邻域内
+                     {
+                         p->speed=0;
+                         p->y=limit_ry[2];
+		         p->x -= (p->speed);
+                     }
+                     else if(p->x >=( stopx[1]+W))//在停车线邻域之外(未过停车线)
+                     {
+                         pre_scan(pa,n,p);//扫描前方路况信息
+                         do_alarm(p);
+                         p->y=limit_ry[2];
+		         p->x -= (p->speed);
+                     }
+                     else if((p->x < stopx[1])&&(p->y < stopy[1]))//过了停车线
+                     {
+                         p->speed=1*RATE;
+                         do_turn_s(p);
+                     }
+                     else if(p->y >= stopy[1])//转弯后
+                     {
+                         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+                         do_alarm(p);
+                         p->x=limit_rx[2];
+		         p->y += (p->speed);
+		         p->angle=-P;
+                     }
+             }
+             break;
+
+    case 22:
+	    if((pl+3)->lc==LIGHTGREEN)//左转灯是绿灯，可以通行
+            {    
+                    if(p->y > stopy[1])
+		    {
+		         pre_scan(pa,n,p);//扫描前方路况信息
+			 do_alarm(p);
+                         p->x=limit_rx[3];
+		         p->y -= (p->speed);
+                    }
+                    else if((p->y <=stopy[1])&&(p->x>stopx[0]))      
+                    {
+                          p->speed=1*RATE;
+                          do_turn_s(p);
+                     }
+                    else if(p->x<=stopx[0])
+                    {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+			 do_alarm(p);
+                         p->y=limit_ry[2];
+		         p->x -= (p->speed);
+		         p->angle=P/2;
+                    }
+            }
+
+            else 
+            {
+                     if(p->y >= stopy[1]&&(p->y<stopy[1]+W))//在停车线的邻域内
+                     {
+                         p->speed=0;
+                         p->x=limit_rx[3];
+		         p->y -= (p->speed);                
+                     }
+                     else if(p->y >= stopy[1]+W)      // (未过停车线)
+                     {
+                         pre_scan(pa,n,p);       //扫描前方路况信息
+                         do_alarm(p);
+                         p->x=limit_rx[3];
+		         p->y -= (p->speed);
+                     }
+                     else if((p->y < stopy[1])&&(p->x > stopx[0]))//过了停车线
+                     {
+                         p->speed=1*RATE;
+                         do_turn_s(p);
+                     }
+                     else if(p->x <= stopx[0])//转弯后
+                     {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+			 do_alarm(p);
+                         p->y=limit_ry[2];
+		         p->x -= (p->speed);
+		         p->angle=P/2;
+                     }
+            }
+            break;
+
+    case 32:
+	    if(pl->lc==LIGHTGREEN)//左转灯是绿灯，可以通行
+            {    
+                    if(p->x < stopx[0])
+		    {
+		         pre_scan(pa,n,p);//扫描前方路况信息
+			 do_alarm(p);
+                         p->y=limit_ry[3];
+		         p->x += (p->speed);
+                    }
+                    else if((p->x >=stopx[0])&&(p->y>stopy[0]))      
+                    {
+                         p->speed=1*RATE;
+                         do_turn_s(p);
+                    }
+                    else if(p->y<=stopy[0])                         
+                    {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+			 do_alarm(p);
+                         p->x=limit_rx[3];
+		         p->y -= (p->speed);
+		         p->angle=0;
+                    }
+            }
+
+            else 
+            {
+                     if((p->x <= stopx[0])&&(p->x > (stopx[0]-W)))      //在停车线的邻域内
+                     {
+                         p->speed=0;
+                         p->y=limit_ry[3];
+		         p->x += (p->speed);                         
+                     }
+                     else if(p->x <= stopx[0]-W)              //未过停车线
+                     {
+                         pre_scan(pa,n,p);               //扫描前方路况信息
+                         do_alarm(p);
+                         p->y=limit_ry[3];
+		         p->x += (p->speed);
+                     }
+                     else if((p->x > stopx[0])&&(p->y > stopy[0]))//过了停车线
+                     {
+                         p->speed=1*RATE;
+                         do_turn_s(p);
+                     }
+                     else if(p->y <= stopy[0])                                 //转弯后
+                     {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+			 do_alarm(p);
+                         p->x=limit_rx[3];
+		         p->y -= (p->speed);
+		         p->angle=0;
+                     }
+             }
+             break;
+
+    case 42:
+	    if((pl+1)->lc==LIGHTGREEN)//左转灯是绿灯，可以通行
+            {    
+                     if((p->y <= stopy[0])&&(p->y > (stopy[0]-W)))//在停车线的邻域内
+                     {
+                         pre_scan(pa,n,p);
+                         do_alarm(p);
+                         p->x=limit_rx[2];
+                         p->y += (p->speed);    
+                     }
+                     else if((p->y <= stopy[0]-W))              //在停车线邻域之外(未过停车线)
+                     {
+                         pre_scan(pa,n,p);//扫描前方路况信息
+                         do_alarm(p);
+                         p->x=limit_rx[2];
+                         p->y += (p->speed);                            
+                     }
+                     else if((p->y > stopy[0])&&(p->x < stopx[1]))       //过了停车线
+                     {
+                         p->speed=1*RATE;
+                         do_turn_s(p);
+                     }
+                     else if(p->x >= stopx[1])                       //转弯后
+                     {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+			 do_alarm(p);
+                         p->y=limit_ry[3];
+		         p->x += (p->speed);
+		         p->angle=-P/2;
+                     }
+            }
+
+            else 
+            {
+                    if((p->y <= stopy[0])&&(p->y > (stopy[0]-W)))//在停车线的邻域内
+                    {
+                        p->speed=0;
+                        p->x=limit_rx[2];
+                        p->y += (p->speed);
+                    }
+                    else if((p->y <= stopy[0]-W))            //在停车线邻域之外(未过停车线)
+                    {
+                        pre_scan(pa,n,p);              //扫描前方路况信息
+                        do_alarm(p);
+                        p->x=limit_rx[2];
+                        p->y += (p->speed);
+                    }
+                    else if((p->y > stopy[0])&&(p->x < stopx[1]))       //过了停车线
+                    {
+                        p->speed=1*RATE;
+                        do_turn_s(p);
+                    }
+                    else if(p->x >= stopx[1])                       //转弯后
+                    {
+                        ex_scan(pa,n,p);
+                        do_alarm(p);
+                        p->y=limit_ry[3];
+                        p->x += (p->speed);
+                        p->angle=-P/2;
+                    }
+            }
+            break;
+
+    }
+}
+
+/*********************************************************
+*******函数名：void do_right_s                             *
+*******功能：十字口控制车辆右转的函数                      *
+*******参数：*pcar车辆首地址，*p当前车地址，*pl交通灯首指针*                            
+*******注：被control_single_car_s调用                     *
+***********************************************************/
+void do_right_s(struct CAR *pcar,int n,struct CAR *p,struct LAMP *pl)
+{
+    //pcar指向整个数组的首地址，p则指向当前的车辆
+    struct CAR *pa=pcar;
+    int i;
+    int stopx[2]={BXO-3*RY-RR-D,BXO+3*RY+RR+D};
+    int stopy[2]={BYO-3*RX-RR-D,BYO+3*RX+RR+D};//用于停车判断交通灯的停车线
+    int limit_rx[6],limit_ry[6];
+    for (i=0;i<6;i++)//初始化限定数组
+    {
+        limit_rx[i]=BXO-(5*RY/2)+RY*i;
+        limit_ry[i]=BYO-(5*RX/2)+RX*i;
+    }	 
+    switch(p->justment)
+    {			
+	case 10:
+		if((pl+2)->rc==LIGHTGREEN)//右转灯是绿灯，可以通行
+                {
+                    if( p->x > stopx[1] )
+		    {
+		         pre_scan(pa,n,p);//扫描前方路况信息
+                         do_alarm(p);        
+                         p->y=limit_ry[0];
+		         p->x -= (p->speed);
+                    }
+                    else if((p->x <=stopx[1])&&(p->y>stopy[0]))      
+                    {
+                         p->speed=1*RATE;               //转弯均为慢速
+                         do_turn_s(p);
+                    }
+                    else if(p->y<=stopy[0])
+                    {
+		         ex_scan(pa,n,p);//转弯后扫描前方路况信息
+                         do_alarm(p);//停车，防止追尾
+                         p->x=limit_rx[5];
+		         p->y -= (p->speed);
+		         p->angle=0;
+                    }
+             }
+             break;                         
+      
+    case 20:
+            if((pl+3)->rc==LIGHTGREEN)//右转灯是绿灯，可以通行
+            {
+                if(p->y > stopy[1])
+                {
+                    pre_scan(pa,n,p); 
+                    do_alarm(p); 
+                    p->x=limit_rx[5];
+                    p->y -= (p->speed);
+                }
+                else if((p->y <=stopy[1])&&(p->x <stopx[1]))      
+                {
+                    p->speed=1*RATE;
+                    do_turn_s(p);
+                }
+                else if(p->x>=stopx[1])
+                {
+                    ex_scan(pa,n,p); 
+                    do_alarm(p); 
+                    p->y=limit_ry[5];
+                    p->x += (p->speed);
+                    p->angle=3*P/2;
+                }
+            }
+            break;
+
+    case 30:
+	    if(pl->rc==LIGHTGREEN)//右转灯是绿灯，可以通行
+            {
+                if(p->x < stopx[0])
+                {
+                    pre_scan(pa,n,p);//扫描前方路况信息
+                    do_alarm(p);
+                    p->y=limit_ry[5];
+                    p->x += (p->speed);
+                }
+                else if((p->x >=stopx[0])&&(p->y<stopy[1]))      
+                {
+                    p->speed=1*RATE;
+                    do_turn_s(p);
+                }
+                else if(p->y>=stopy[1])
+                {
+                    ex_scan(pa,n,p); 
+                    do_alarm(p);
+                    p->x=limit_rx[0];
+                    p->y += (p->speed);
+                    p->angle=P;
+                }
+             }
+             break;
+
+    case 40:
+            if((pl+1)->rc==LIGHTGREEN)//右转灯是绿灯，可以通行
+            {
+                if(p->y < stopy[0])
+                {
+                    pre_scan(pa,n,p);//扫描前方路况信息
+                    do_alarm(p);
+                    p->x=limit_rx[0];
+                    p->y += (p->speed);
+                }
+                else if((p->y >=stopy[0])&&(p->x>stopx[0]))      
+                {
+                    p->speed=1*RATE;
+                    do_turn_s(p);
+                }
+                else if(p->x<=stopx[0])
+                {
+                    ex_scan(pa,n,p);//扫描前方路况信息
+                    do_alarm(p);
+                    p->y=limit_ry[0];
+                    p->x -= (p->speed);
+                    p->angle=P/2;
+                }
+            }
+            break;
+    }
+}
+
+/*******************************************************************
+*******函数名：void control_single_car_s                            *
+*******功能：十字口控制单辆车运行的函数                              *
+*******参数：*pp车辆首地址，n为车辆总数，*p当前车地址，*pl交通灯首指针*                            
+*******注：被control_car_s调用                                      *
+*********************************************************************/
+void control_single_car_s(struct CAR *pp,int n,struct CAR *p,struct LAMP *pl)
+{                       //pp指向整个数组的首地址，p则指向当前的车辆
+  if((p->justment==11)||(p->justment==21)||(p->justment==31)||(p->justment==41))       //1表示直行车道
+        do_straight_s(pp,n,p,pl); //控制直行车辆
+
+  else if((p->justment==10)||(p->justment==20)||(p->justment==30)||(p->justment==40))  //0标志右转车道
+        do_right_s(pp,n,p,pl);    //控制要右转的车辆
+
+  else  if((p->justment==12)||(p->justment==22)||(p->justment==32)||(p->justment==42))  //2为左转车道
+        do_left_s(pp,n,p,pl);     //控制要左转的车辆
+}
+
+
+
+/*******************************************************************
+*******函数名：void control_car_s                                   *
+*******功能：丁字口控制全部车运行的函数                              *
+*******参数：*p车辆首地址，n为车辆总数，*pl交通灯首指针              *                            
+*******注：被fz函数调用                                             *
+*********************************************************************/
+void control_car_s(struct CAR *p,struct LAMP *pl,int n)
+{
+	int i;
+	struct CAR *pc=NULL;
+	pc=p;
+	for(i=0;i<n;i++)
+	{
+		 control_single_car_s(pc,n,p,pl);
+		 p++;
+	}
+}
