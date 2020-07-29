@@ -39,5 +39,12 @@ typedef struct tagRGBQUAD {
     BYTE rgbReserved;// 保留，必须为0
 }RGBQUAD;
 
+typedef struct BMP{
+    BITMAPFILEHEADER fileHead;
+    BITMAPINFOHEADER infoHead;
+    RGBQUAD pColorTable[256];
+}BMPHeader; 
+
 
 #endif
+
