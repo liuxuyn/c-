@@ -10,14 +10,14 @@
  读入成功返回1
  读入失败返回0 
 *******************************/
-int readbmp(BMPHeader* head,char *address)
+int readBmp(BMPHeader* head,char *address)
 {
     int i=0;
     BITMAPFILEHEADER fileHeader;
     BITMAPINFOHEADER infoHeader;
     RGBQUAD pColorTable[256];
     FILE* fp;
-	fp = fopen("C:/PIC/picture/c.bmp", "rb");//address
+	fp = fopen(address, "rb");//address
     if(fp == NULL)
     {
         printf("Fail to open image!\n");
@@ -25,9 +25,24 @@ int readbmp(BMPHeader* head,char *address)
     }
     fread(&fileHeader, 1, sizeof(BITMAPFILEHEADER), fp);
     fread(&infoHeader, 1, sizeof(BITMAPINFOHEADER), fp);
+    if (fileHeader.bfType != 0X4D42)
+    {   /* BM */
+        fprintf(stderr, "Not a BMP file !\n");
+        return 0;
+    }
+    if (infoHeader.biBitCount > 8)
+    {   /*  不能显示真彩色图像 */
+        fprintf(stderr, "Can not display ture color image !\n");
+        return 0;
+    }
+    if (infoHeader.biCompression != 0)
+    { /*  不能处理压缩图像 */
+        fprintf(stderr, "Not non-compressed image !\n");
+        return 0;
+    }
     fread(pColorTable,sizeof(RGBQUAD),256,fp);
-    fileHeader=head->fileHead;
-    infoHeader=head->infoHead;
+    head->fileHead=fileHeader;
+    head->infoHead=infoHeader;
     for(i=0; i<256; i++)
     {
         head->pColorTable[i].rgbBlue=pColorTable[i].rgbBlue;
@@ -36,8 +51,10 @@ int readbmp(BMPHeader* head,char *address)
         head->pColorTable[i].rgbReserved=pColorTable[i].rgbReserved;
     }
     fclose(fp);
-    //printf("biBitCount:%d",infoHeader.biBitCount);
-    return 1;
+    //printf("biBitCount:%d\n",infoHeader.biBitCount);
+	//printf("biWidth:%d\n",infoHeader.biWidth);
+	//printf("rgbBlue:%d\n",pColorTable[100].rgbBlue);
+	return 1;
 }
 
 /*******************************
@@ -47,25 +64,20 @@ int readbmp(BMPHeader* head,char *address)
  读入成功返回1
  读入失败返回0 
 *******************************/
-int readpic(BYTE* p,int size,char *address)
+int readPix(BYTE* temp,int size,char *address)
 {
     FILE *fp;
-    int i;
-    unsigned char *pBmpBuf;
-    BITMAPFILEHEADER fileHead;
-    BITMAPINFOHEADER infoHead;
-    RGBQUAD *pColorTable;
-    int height,width,lineByte,biCount,jump;
+    int off;
     fp=fopen(address,"rb");
     if (fp==0)
     {
         return 0;
     }
-    
+
     // 计算偏移距离 
-    jump=sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*256;
-    fseek(fp,jump,SEEK_SET);
-    fread(p,size,1,fp);
+    off=sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*256;
+    fseek(fp,off,SEEK_SET);
+    fread(temp,size,1,fp);
     fclose(fp);
     return 1; 
 }
@@ -78,7 +90,7 @@ int readpic(BYTE* p,int size,char *address)
 *******************************/
 int openJudge(BMPHeader *head)
 {
-    int width,height,biCount,lineByte; 
+    int width,height,biBitCount,lineByte; 
     long long bfSize;
     BITMAPFILEHEADER fileHead;
     BITMAPINFOHEADER infoHead;
@@ -86,8 +98,8 @@ int openJudge(BMPHeader *head)
     infoHead=head->infoHead;
     width=infoHead.biWidth;
     height=infoHead.biHeight;
-    biCount=infoHead.biBitCount;
-    lineByte=(width*biCount/8+3)/4*4;
+    biBitCount=infoHead.biBitCount;
+    lineByte=(width*biBitCount/8+3)/4*4;
      
     bfSize=(long long)height*lineByte+fileHead.bfOffBits; // 计算缩放后大小 
     bfSize=(bfSize+3)/4*4;

@@ -4,6 +4,7 @@
 
 #include"bmp.h"
 #include"function.h"
+#include"svga.h"
 #include<stdio.h>
 #include<malloc.h>
 #include<bios.h>
